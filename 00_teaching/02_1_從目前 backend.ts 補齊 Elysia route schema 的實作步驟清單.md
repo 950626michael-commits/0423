@@ -1,3 +1,9 @@
+---
+noteId: "d108ec723ee211f185ead73ffc185340"
+tags: []
+
+---
+
 # 從目前 backend.ts 補齊 Elysia route schema 的實作步驟清單
 
 這份文件是 [02_0_API contract truth 的重要性與實作方式](</root/00_nsPrj/01_backEnd/06_elysia/00_demo01/00_teaching/02_0_API contract truth 的重要性與實作方式.md:1>) 的實作篇。

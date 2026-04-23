@@ -1,3 +1,9 @@
+---
+noteId: "d108ec743ee211f185ead73ffc185340"
+tags: []
+
+---
+
 # 導入 OpenAPI ／ Swagger 輸出 `_01`（封存說明）
 
 本檔案原本是 `02_2_導入 OpenAPI ／ Swagger 輸出.md` 的早期副本。

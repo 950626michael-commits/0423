@@ -1,3 +1,9 @@
+---
+noteId: "d1093a943ee211f185ead73ffc185340"
+tags: []
+
+---
+
 # 舊 V8 namespace 改造：為什麼、做什麼、怎麼做
 
 > 目的：讓「舊 V8（Drizzle + Neon + userId:number）」在資料庫已被舊 V9 改動後，仍能獨立運作。

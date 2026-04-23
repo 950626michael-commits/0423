@@ -1,3 +1,9 @@
+---
+noteId: "d108ec713ee211f185ead73ffc185340"
+tags: []
+
+---
+
 # API contract truth 的重要性與實作方式
 
 建議前置閱讀：

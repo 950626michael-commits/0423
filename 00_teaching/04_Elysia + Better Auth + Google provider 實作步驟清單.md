@@ -1,3 +1,9 @@
+---
+noteId: "d1093a953ee211f185ead73ffc185340"
+tags: []
+
+---
+
 # Elysia + Better Auth + Google provider 實作步驟清單
 
 建議前置閱讀：

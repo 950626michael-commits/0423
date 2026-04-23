@@ -1,3 +1,9 @@
+---
+noteId: "d1093a923ee211f185ead73ffc185340"
+tags: []
+
+---
+
 # 為什麼這個專案選 Drizzle + Neon
 
 建議前置閱讀：

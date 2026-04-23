@@ -1,3 +1,9 @@
+---
+noteId: "d11792703ee211f185ead73ffc185340"
+tags: []
+
+---
+
 # Legacy V8 PostgreSQL 運行說明
 
 這組檔案提供「舊 V8（userId:number）」可在 PostgreSQL 上獨立運作的方案。
