@@ -98,7 +98,6 @@ export const updateOrderParamsSchema = z.object({
 });
 
 export const updateOrderBodySchema = z.object({
-  userId: z.string().min(1),
   itemId: z.number().int().min(1),
   qty: z.number().min(0),
 });
@@ -106,10 +105,6 @@ export const updateOrderBodySchema = z.object({
 /** POST /api/orders/:id/submit */
 export const submitOrderParamsSchema = z.object({
   id: z.string().regex(/^[0-9]+$/),
-});
-
-export const submitOrderBodySchema = z.object({
-  userId: z.string().min(1),
 });
 
 // ─── Response Schemas（API envelope 層）─────────────────────────────────
