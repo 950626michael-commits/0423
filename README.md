@@ -1,3 +1,9 @@
+---
+noteId: "5b6cdc905a5f11f1a162a31fdcbb1d70"
+tags: []
+
+---
+
 # 00_demo01 - V9 (Better Auth + Google OAuth)
 
 聯大資工早餐訂餐系統 - 完整版
