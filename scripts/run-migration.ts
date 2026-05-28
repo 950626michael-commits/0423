@@ -84,15 +84,21 @@ async function main() {
       for (let i = 0; i < statements.length; i++) {
         const stmt = statements[i]!;
         console.log(`  [${i + 1}/${statements.length}] executing...`);
+        const savepointName = `migration_stmt_${i + 1}`;
         try {
+          await client.query(`SAVEPOINT ${savepointName}`);
           await client.query(stmt);
+          await client.query(`RELEASE SAVEPOINT ${savepointName}`);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           // 若表/schema 已存在則繼續，其他錯誤則中止
           if (
             msg.includes("already exists") ||
-            msg.includes("duplicate_table")
+            msg.includes("duplicate_table") ||
+            msg.includes("does not exist")
           ) {
+            await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+            await client.query(`RELEASE SAVEPOINT ${savepointName}`);
             console.warn(`  [skip] already exists: ${msg.split("\n")[0]}`);
           } else {
             console.error(`  [error] ${msg}`);
