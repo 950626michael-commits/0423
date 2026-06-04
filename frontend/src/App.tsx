@@ -594,6 +594,26 @@ export default function App() {
           </div>
         ) : null}
 
+        <section className="mb-6">
+          <div className="form-control">
+            <label className="input-group">
+              <span>搜尋菜單</span>
+              <input
+                type="text"
+                value={menuQuery}
+                onChange={(event) => setMenuQuery(event.target.value)}
+                placeholder="輸入名稱、說明或分類"
+                className="input input-bordered w-full"
+              />
+            </label>
+          </div>
+          {menuQuery ? (
+            <p className="text-sm opacity-70 mt-2">
+              搜尋關鍵字：<strong>{menuQuery}</strong>
+            </p>
+          ) : null}
+        </section>
+
         {items.length === 0 ? (
           <div className="alert alert-info">
             <span>
