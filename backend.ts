@@ -2,6 +2,8 @@ import { Elysia } from "elysia";
 import { openapi } from "@elysiajs/openapi";
 import { cors } from "@elysia/cors";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import toTaipeiDateTime from "./util.ts";
 import {
   apiErrorResponseSchema,
@@ -29,10 +31,19 @@ const port = parseInt(process.env.PORT || "3000", 10);
 const host = process.env.HOST || "localhost";
 const allowedOrigin = process.env.API_ALLOWED_ORIGIN || "*";
 const store = createStore({ dataFilePath: "./data/store.json" });
-const PUBLIC_DIR = new URL("./public/", import.meta.url);
-const PUBLIC_INDEX = new URL("./public/index.html", import.meta.url);
+const SOURCE_PUBLIC_PATH = fileURLToPath(new URL("./public/", import.meta.url));
+const BUNDLE_PUBLIC_PATH = fileURLToPath(new URL("../public/", import.meta.url));
+const PUBLIC_DIR_PATH = existsSync(SOURCE_PUBLIC_PATH)
+  ? SOURCE_PUBLIC_PATH
+  : existsSync(BUNDLE_PUBLIC_PATH)
+  ? BUNDLE_PUBLIC_PATH
+  : null;
+const PUBLIC_INDEX_PATH = PUBLIC_DIR_PATH
+  ? `${PUBLIC_DIR_PATH.replace(/[\\/]$/, "")}/index.html`
+  : null;
 const hasPublicAssets =
-  existsSync(PUBLIC_DIR) && existsSync(PUBLIC_INDEX);
+  PUBLIC_DIR_PATH !== null && PUBLIC_INDEX_PATH !== null &&
+  existsSync(PUBLIC_INDEX_PATH);
 
 // ─── Auth Helper ──────────────────────────────────────────────────────────────
 // 簡化的 helper 函數，用於保護路由並獲取 user，失敗時拋出 401 錯誤
@@ -508,21 +519,31 @@ if (hasPublicAssets) {
       });
     }
 
-    if (pathname !== "/") {
-      const assetPath = pathname.startsWith("/") ? pathname.slice(1) : pathname;
-      const staticFile = Bun.file(new URL(assetPath, PUBLIC_DIR));
-      if (await staticFile.exists()) {
-        return staticFile;
+    try {
+      if (pathname !== "/") {
+        const assetPath = pathname.startsWith("/") ? pathname.slice(1) : pathname;
+        const staticFile = Bun.file(join(PUBLIC_DIR_PATH, assetPath));
+        if (await staticFile.exists()) {
+          return staticFile;
+        }
       }
-    }
 
-    // SPA fallback: 回傳 index.html
-    return Bun.file(PUBLIC_INDEX);
+      // SPA fallback: 回傳 index.html
+      return Bun.file(PUBLIC_INDEX_PATH);
+    } catch (error) {
+      console.error("[static route error]", error);
+      throw error;
+    }
   });
 }
 
 // 全域錯誤處理
 app.onError(({ error, set, code }) => {
+  console.error("Unhandled error:", error);
+  if (error instanceof Error) {
+    console.error(error.stack);
+  }
+
   if (code === "VALIDATION") {
     set.status = 400;
     return {
