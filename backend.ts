@@ -29,8 +29,10 @@ const port = parseInt(process.env.PORT || "3000", 10);
 const host = process.env.HOST || "localhost";
 const allowedOrigin = process.env.API_ALLOWED_ORIGIN || "*";
 const store = createStore({ dataFilePath: "./data/store.json" });
+const PUBLIC_DIR = new URL("./public/", import.meta.url);
+const PUBLIC_INDEX = new URL("./public/index.html", import.meta.url);
 const hasPublicAssets =
-  existsSync("./public") && existsSync("./public/index.html");
+  existsSync(PUBLIC_DIR) && existsSync(PUBLIC_INDEX);
 
 // ─── Auth Helper ──────────────────────────────────────────────────────────────
 // 簡化的 helper 函數，用於保護路由並獲取 user，失敗時拋出 401 錯誤
@@ -506,14 +508,16 @@ if (hasPublicAssets) {
       });
     }
 
-    // 嘗試回傳對應的靜態檔案
-    const staticFile = Bun.file(`./public${pathname}`);
-    if (pathname !== "/" && (await staticFile.exists())) {
-      return staticFile;
+    if (pathname !== "/") {
+      const assetPath = pathname.startsWith("/") ? pathname.slice(1) : pathname;
+      const staticFile = Bun.file(new URL(assetPath, PUBLIC_DIR));
+      if (await staticFile.exists()) {
+        return staticFile;
+      }
     }
 
     // SPA fallback: 回傳 index.html
-    return Bun.file("./public/index.html");
+    return Bun.file(PUBLIC_INDEX);
   });
 }
 
