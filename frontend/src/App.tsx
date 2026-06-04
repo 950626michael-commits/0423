@@ -32,7 +32,9 @@ export default function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isClearingCart, setIsClearingCart] = useState(false);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+  const [searchText, setSearchText] = useState("");
   const [menuQuery, setMenuQuery] = useState("");
+  const [isComposing, setIsComposing] = useState(false);
 
   function syncCartFromOrder(order: Order) {
     const nextQtyByItemId = order.items.reduce(
@@ -59,6 +61,20 @@ export default function App() {
       "/api/menu" + (query ? `?q=${encodeURIComponent(query)}` : ""),
     );
   }
+
+  useEffect(() => {
+    if (isComposing) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setMenuQuery(searchText.trim());
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [searchText, isComposing]);
 
   async function loadCurrentOrder(): Promise<Order | null> {
     const response = await fetch(buildApiUrl("/api/orders/current"), {
@@ -600,8 +616,20 @@ export default function App() {
               <span>搜尋菜單</span>
               <input
                 type="text"
-                value={menuQuery}
-                onChange={(event) => setMenuQuery(event.target.value)}
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                onCompositionStart={() => setIsComposing(true)}
+                onCompositionEnd={(event) => {
+                  setIsComposing(false);
+                  const value = event.currentTarget.value.trim();
+                  setSearchText(value);
+                  setMenuQuery(value);
+                }}
+                onBlur={() => {
+                  if (!isComposing) {
+                    setMenuQuery(searchText.trim());
+                  }
+                }}
                 placeholder="輸入名稱、說明或分類"
                 className="input input-bordered w-full"
               />
@@ -640,11 +668,6 @@ export default function App() {
                         alt={item.name}
                         className="w-full h-full object-cover"
                         loading="lazy"
-                        onError={(event) => {
-                          const target = event.currentTarget;
-                          target.src =
-                            "https://images.unsplash.com/photo-1526318896980-cf78c088247c?auto=format&fit=crop&w=800&q=80";
-                        }}
                       />
                     </figure>
                     <div className="card-body">
