@@ -203,12 +203,37 @@ export default function App() {
     return { groupedItems, categories };
   }, [items]);
 
+  const cartItemCount = useMemo(
+    () => Object.values(cartQtyByItemId).reduce((sum, qty) => sum + qty, 0),
+    [cartQtyByItemId],
+  );
+
+  const cartDetails = useMemo(() => {
+    const itemById = new Map(items.map((item) => [item.id, item]));
+
+    return Object.entries(cartQtyByItemId)
+      .map(([itemIdText, qty]) => {
+        const itemId = Number(itemIdText);
+        const item = itemById.get(itemId);
+        if (!item || qty <= 0) {
+          return null;
+        }
+
+        return {
+          itemId,
           qty,
           item,
           subtotal: item.price * qty,
         };
       })
-      .filter((entry) => entry !== null);
+      .filter(
+        (entry): entry is {
+          itemId: number;
+          qty: number;
+          item: MenuItem;
+          subtotal: number;
+        } => entry !== null,
+      );
   }, [cartQtyByItemId, items]);
 
   async function ensureOrder(): Promise<number> {
