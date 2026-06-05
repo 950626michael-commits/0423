@@ -1,7 +1,15 @@
 import { defineConfig } from "drizzle-kit";
+import * as dotenv from "dotenv";
 
-const migrationUrl =
-  process.env.DATABASE_URL_MIGRATION ?? process.env.DATABASE_URL;
+// 💡 強迫 Drizzle Kit 讀取專案根目錄的 .env 檔案
+dotenv.config();
+
+const migrationUrl = process.env.DATABASE_URL_MIGRATION || process.env.DATABASE_URL;
+
+console.log("======== Drizzle Kit 連線檢查 ========");
+console.log("當前要推入的 Schema 空間 (PG_SCHEMA):", process.env.PG_SCHEMA || "bf_v10");
+console.log("連線字串是否取得:", migrationUrl ? "✅ 已取得" : "❌ 未取得");
+console.log("====================================");
 
 if (!migrationUrl) {
   throw new Error(

@@ -36,7 +36,7 @@ import { createStore } from "./store/index.ts";
 import { auth, getCurrentUser } from "./auth/better-auth.ts";
 import { db } from "./db/client.ts";
 import { user as userTable } from "./db/auth-schema.ts";
-import { roleRequestsTable } from "./db/schema.ts";
+import { roleRequestsTable, menuItemsTable } from "./db/schema.ts";
 import { toSessionUser } from "./auth/user-mapper.ts";
 import { roleRequestSchema, roleSchema } from "./shared/contracts.ts";
 import type { RoleRequest } from "./shared/contracts.ts";
@@ -176,16 +176,51 @@ app.post("/api/sign-out", async ({ request }) => {
 });
 
 // 菜單路由
-app.get("/api/menu", () => ({ data: [...store.getMenu()] }), {
-  detail: {
-    tags: ["menu"],
-    summary: "List menu items",
-    description: "Return all available breakfast menu items.",
+// ─── 菜單路由 (徹底改為 Drizzle ORM 版本) ──────────────────────────────────────
+// ─── 菜單路由 (強行轉型相容版) ──────────────────────────────────────
+// ─── 菜單路由 (終極相容偵錯版) ──────────────────────────────────────
+app.get(
+  "/api/menu",
+  async () => {
+    // 1. 從資料庫撈出目前的最新菜單
+    const menuRows = await db
+      .select()
+      .from(menuItemsTable)
+      .where(eq(menuItemsTable.isCurrentVersion, true));
+
+    // 💡 偵錯日誌：在終端機印出資料庫真正撈到的第一筆資料，看欄位長怎樣
+    console.log("======== 🔍 檢查資料庫捞出的原始菜單欄位 ========");
+    if (menuRows.length > 0) {
+      console.log("第一筆菜單原始資料:", menuRows[0]);
+    } else {
+      console.log("❌ 警告：資料庫裡面居然是空的！沒有撈到任何菜單！");
+    }
+    console.log("================================================");
+
+    // 2. 轉型成符合前端期待的欄位 (同時補上 camelCase 與 snake_case，雙重保險)
+    const formattedMenu = menuRows.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      price: row.price,
+      category: row.category,
+      description: row.description,
+      // 💡 同時塞這兩個，不管 Zod 驗證認哪一個都吃得到！
+      imageUrl: row.imageUrl || row.image_url || "/imgs/menu/black-tea.webp",
+      image_url: row.image_url || row.imageUrl || "/imgs/menu/black-tea.webp",
+    }));
+
+    return { data: formattedMenu } as any;
   },
-  response: {
-    200: menuListResponseSchema,
+  {
+    detail: {
+      tags: ["menu"],
+      summary: "List menu items",
+    },
+    response: {
+      200: menuListResponseSchema,
+    },
   },
-});
+);
 
 app.post(
   "/api/menu",

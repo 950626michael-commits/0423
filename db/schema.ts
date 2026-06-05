@@ -4,38 +4,64 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  index,
+  boolean,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
 
-// PostgreSQL namespace 隔離
-// 透過 PG_SCHEMA 環境變數切換，預設 "bf_v9"
-// V9 使用 bf_v9（Better Auth 整合版本）
-// 注意：不能使用 "public" 作為 schema 名稱（Drizzle 限制）
-const schemaName = process.env.PG_SCHEMA || "bf_v9";
+// PostgreSQL namespace 隔離，配合講義切換至 bf_v10
+const schemaName = process.env.PG_SCHEMA || "bf_v10";
 if (schemaName === "public") {
   throw new Error(
-    'PG_SCHEMA cannot be "public". Use a custom schema name or leave it unset to use the default "bf_v9".',
+    'PG_SCHEMA cannot be "public". Use a custom schema name or leave it unset to use the default "bf_v10".',
   );
 }
 const appSchema = pgSchema(schemaName);
 
-// 對照 shared/contracts.ts：
-//   MenuItem { id, name, price, category, description, image_url }
-//   Order { id, userId: string, total, status, createdAt, submittedAt }
-//   OrderItem { item: MenuItem, qty }  → order_items（反正規化）
-//
-// V9 設計：userId 直接對應 Better Auth 的 user.id（text PK）
-// 不再維護獨立的 users 表，身份完全由 Better Auth 管理。
+// ==========================================
+// 📋 菜單項目表 (方案 A：業務層版本化)
+// ==========================================
+export const menuItemsTable = appSchema.table(
+  "menu_items",
+  {
+    id: text("id").primaryKey(), // 複合主鍵，格式如 "001-01"
+    entityId: text("entity_id").notNull(), // UUID 實體識別
+    logicalId: text("logical_id").notNull(), // 業務邏輯編號如 "001"
+    version: integer("version").notNull().default(1),
 
-export const menuItemsTable = appSchema.table("menu_items", {
-  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
-  name: text("name").notNull(),
-  price: integer("price").notNull(),
-  category: text("category").notNull(),
-  description: text("description").notNull(),
-  imageUrl: text("image_url").notNull(),
-});
+    name: text("name").notNull(),
+    price: integer("price").notNull(),
+    category: text("category").notNull(),
+    description: text("description").notNull(),
+    imageUrl: text("image_url").notNull(),
 
+    isCurrentVersion: boolean("is_current_version").default(true),
+    supersedes: text("supersedes").references(
+      (): AnyPgColumn => menuItemsTable.id,
+    ),
+    changeReason: text("change_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: text("created_by"),
+  },
+  (table) => ({
+    entityVersionIdx: uniqueIndex("menu_items_entity_version_idx").on(
+      table.entityId,
+      table.version,
+    ),
+    logicalIdIdx: index("menu_items_logical_id_idx").on(table.logicalId),
+    
+    // 💡 改成這樣，紅字就會立刻消失了！
+    currentVersionIdx: index("menu_items_current_version_idx")
+      .on(table.isCurrentVersion)
+      .where(sql`is_current_version = true`),
+  })
+);
+
+// ==========================================
+// 📋 訂單主表
+// ==========================================
 export const ordersTable = appSchema.table("orders", {
   id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   userId: text("user_id")
@@ -47,6 +73,9 @@ export const ordersTable = appSchema.table("orders", {
   submittedAt: timestamp("submitted_at", { withTimezone: true }),
 });
 
+// ==========================================
+// 📋 訂單項目表 (方案 A：簡化欄位，指向特定版本 id)
+// ==========================================
 export const orderItemsTable = appSchema.table(
   "order_items",
   {
@@ -54,22 +83,23 @@ export const orderItemsTable = appSchema.table(
     orderId: integer("order_id")
       .notNull()
       .references(() => ordersTable.id, { onDelete: "cascade" }),
-    itemId: integer("item_id").notNull(),
-    name: text("name").notNull(),
-    price: integer("price").notNull(),
-    category: text("category").notNull(),
-    description: text("description").notNull(),
-    imageUrl: text("image_url").notNull(),
+    // 配合方案 A，改為 TEXT 型態，直接映射到帶有版本號的 menu_items.id
+    menuItemId: text("menu_item_id")
+      .notNull()
+      .references(() => menuItemsTable.id),
     qty: integer("qty").notNull(),
   },
   (table) => ({
     orderItemUniqueIdx: uniqueIndex("order_items_order_item_idx").on(
       table.orderId,
-      table.itemId,
+      table.menuItemId,
     ),
   }),
 );
 
+// ==========================================
+// 📋 角色審核申請表
+// ==========================================
 export const roleRequestsTable = appSchema.table("role_requests", {
   id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   userId: text("user_id")
