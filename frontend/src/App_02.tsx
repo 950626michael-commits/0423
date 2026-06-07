@@ -17,12 +17,10 @@ export default function App() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [orderId, setOrderId] = useState<number | null>(null);
-  const [cartQtyByItemId, setCartQtyByItemId] = useState<
-    Record<number, number>
-  >({});
+  const [orderId, setOrderId] = useState<string | null>(null); // 改為 string
+  const [cartQtyByItemId, setCartQtyByItemId] = useState<Record<string, number>>({}); // key 改為 string
   const [cartTotal, setCartTotal] = useState(0);
-  const [activeItemId, setActiveItemId] = useState<number | null>(null);
+  const [activeItemId, setActiveItemId] = useState<string | null>(null); // 改為 string
   const [actionError, setActionError] = useState("");
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isClearingCart, setIsClearingCart] = useState(false);
@@ -30,10 +28,10 @@ export default function App() {
   function syncCartFromOrder(order: Order) {
     const nextQtyByItemId = order.items.reduce(
       (acc, orderItem) => {
-        acc[orderItem.item.id] = orderItem.qty;
+        acc[String(orderItem.item.id)] = orderItem.qty; // 轉為 string
         return acc;
       },
-      {} as Record<number, number>,
+      {} as Record<string, number>,
     );
 
     setCartQtyByItemId(nextQtyByItemId);
@@ -46,25 +44,16 @@ export default function App() {
     async function loadMenu() {
       try {
         const response = await fetch(buildApiUrl("/api/menu"));
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = (await response.json()) as ApiDataResponse<MenuItem[]>;
-        const fetchedItems = Array.isArray(payload?.data) ? payload.data : [];
-
-        if (mounted) {
-          setItems(fetchedItems);
-        }
+        if (mounted) setItems(Array.isArray(payload?.data) ? payload.data : []);
       } catch (fetchError) {
         if (mounted) {
           setError("無法取得菜單資料，請稍後再試。");
           console.error(fetchError);
         }
       } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     }
 
@@ -72,148 +61,83 @@ export default function App() {
 
     async function restoreOrder() {
       const savedOrderId = window.localStorage.getItem(ORDER_ID_STORAGE_KEY);
-      if (!savedOrderId) {
-        return;
-      }
-
-      const parsedOrderId = Number(savedOrderId);
-      if (!Number.isInteger(parsedOrderId) || parsedOrderId <= 0) {
-        window.localStorage.removeItem(ORDER_ID_STORAGE_KEY);
-        return;
-      }
+      if (!savedOrderId) return;
 
       try {
-        const response = await fetch(
-          buildApiUrl(`/api/orders/${parsedOrderId}`),
-        );
-
+        const response = await fetch(buildApiUrl(`/api/orders/${savedOrderId}`));
         if (!response.ok) {
           window.localStorage.removeItem(ORDER_ID_STORAGE_KEY);
           return;
         }
-
         const payload = (await response.json()) as ApiDataResponse<Order>;
-        const restoredOrder = payload?.data;
-        if (!restoredOrder || !mounted) {
-          return;
+        if (payload?.data && mounted) {
+          setOrderId(savedOrderId);
+          syncCartFromOrder(payload.data);
         }
-
-        setOrderId(parsedOrderId);
-        syncCartFromOrder(restoredOrder);
       } catch (restoreError) {
         console.error(restoreError);
       }
     }
 
     void restoreOrder();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   const grouped = useMemo(() => {
-    const groupedItems = items.reduce(
-      (acc, item) => {
-        const category = item?.category || "未分類";
-        if (!acc[category]) {
-          acc[category] = [];
-        }
-        acc[category].push(item);
-        return acc;
-      },
-      {} as Record<string, MenuItem[]>,
-    );
+    const groupedItems = items.reduce((acc, item) => {
+      const category = item?.category || "未分類";
+      if (!acc[category]) acc[category] = [];
+      acc[category].push(item);
+      return acc;
+    }, {} as Record<string, MenuItem[]>);
 
-    const categories = Object.keys(groupedItems).sort((a, b) =>
-      a.localeCompare(b, "zh-Hant"),
-    );
-
+    const categories = Object.keys(groupedItems).sort((a, b) => a.localeCompare(b, "zh-Hant"));
     return { groupedItems, categories };
   }, [items]);
 
-  const cartItemCount = useMemo(
-    () => Object.values(cartQtyByItemId).reduce((sum, qty) => sum + qty, 0),
-    [cartQtyByItemId],
-  );
+  const cartItemCount = useMemo(() => Object.values(cartQtyByItemId).reduce((sum, qty) => sum + qty, 0), [cartQtyByItemId]);
 
   const cartDetails = useMemo(() => {
-    const itemById = new Map(items.map((item) => [item.id, item]));
-
+    const itemById = new Map(items.map((item) => [String(item.id), item]));
     return Object.entries(cartQtyByItemId)
-      .map(([itemIdText, qty]) => {
-        const itemId = Number(itemIdText);
+      .map(([itemId, qty]) => {
         const item = itemById.get(itemId);
-        if (!item || qty <= 0) {
-          return null;
-        }
-
-        return {
-          itemId,
-          qty,
-          item,
-          subtotal: item.price * qty,
-        };
+        if (!item || qty <= 0) return null;
+        return { itemId, qty, item, subtotal: item.price * qty };
       })
-      .filter((entry) => entry !== null);
+      .filter((entry): entry is { itemId: string; qty: number; item: MenuItem; subtotal: number } => entry !== null);
   }, [cartQtyByItemId, items]);
 
-  async function ensureOrder(): Promise<number> {
-    if (orderId !== null) {
-      return orderId;
-    }
-
-    const response = await fetch(buildApiUrl("/api/orders"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Create order failed: HTTP ${response.status}`);
-    }
-
+  async function ensureOrder(): Promise<string> {
+    if (orderId !== null) return orderId;
+    const response = await fetch(buildApiUrl("/api/orders"), { method: "POST", headers: { "Content-Type": "application/json" } });
+    if (!response.ok) throw new Error(`Create order failed: HTTP ${response.status}`);
     const payload = (await response.json()) as ApiDataResponse<Order>;
-    const createdOrderId = payload?.data?.id;
-
-    if (!createdOrderId) {
-      throw new Error("Create order failed: invalid payload");
-    }
-
+    const createdOrderId = String(payload?.data?.id);
     setOrderId(createdOrderId);
-    window.localStorage.setItem(ORDER_ID_STORAGE_KEY, String(createdOrderId));
+    window.localStorage.setItem(ORDER_ID_STORAGE_KEY, createdOrderId);
     return createdOrderId;
   }
 
   async function addToCart(item: MenuItem): Promise<void> {
     setActionError("");
-    setActiveItemId(item.id);
+    const itemIdStr = String(item.id);
+    setActiveItemId(itemIdStr);
 
     try {
       const targetOrderId = await ensureOrder();
-      const currentQty = cartQtyByItemId[item.id] ?? 0;
+      const currentQty = cartQtyByItemId[itemIdStr] ?? 0;
       const nextQty = currentQty + 1;
 
-      const response = await fetch(
-        buildApiUrl(`/api/orders/${targetOrderId}`),
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ itemId: item.id, qty: nextQty }),
-        },
-      );
+      const response = await fetch(buildApiUrl(`/api/orders/${targetOrderId}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: item.id, qty: nextQty }),
+      });
 
-      if (!response.ok) {
-        throw new Error(`Update order failed: HTTP ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error(`Update order failed: HTTP ${response.status}`);
       const payload = (await response.json()) as ApiDataResponse<Order>;
-      const updatedOrder = payload?.data;
-
-      if (!updatedOrder) {
-        throw new Error("Update order failed: invalid payload");
-      }
-
-      syncCartFromOrder(updatedOrder);
+      if (payload?.data) syncCartFromOrder(payload.data);
     } catch (cartError) {
       setActionError("加入購物車失敗，請稍後再試。");
       console.error(cartError);
@@ -223,10 +147,7 @@ export default function App() {
   }
 
   async function clearCart(): Promise<void> {
-    if (orderId === null || cartDetails.length === 0) {
-      return;
-    }
-
+    if (orderId === null || cartDetails.length === 0) return;
     setActionError("");
     setIsClearingCart(true);
 
@@ -237,12 +158,8 @@ export default function App() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ itemId: detail.itemId, qty: 0 }),
         });
-
-        if (!response.ok) {
-          throw new Error(`Clear cart failed: HTTP ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`Clear cart failed: HTTP ${response.status}`);
       }
-
       setCartQtyByItemId({});
       setCartTotal(0);
     } catch (clearError) {
@@ -253,104 +170,52 @@ export default function App() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <span className="loading loading-spinner loading-lg"></span>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="alert alert-error m-4">
-        <span>{error}</span>
-      </div>
-    );
-  }
+  if (loading) return <div className="flex justify-center items-center min-h-screen"><span className="loading loading-spinner loading-lg"></span></div>;
+  if (error) return <div className="alert alert-error m-4"><span>{error}</span></div>;
 
   return (
     <div className="min-h-screen bg-base-200">
       <div className="navbar bg-base-100 shadow-lg flex-col items-stretch gap-2 md:flex-row md:items-center">
-        <div className="flex-1 w-full md:w-auto">
-          <a className="btn btn-ghost normal-case text-2xl">🌅 早餐菜單</a>
-        </div>
+        <div className="flex-1 w-full md:w-auto"><a className="btn btn-ghost normal-case text-2xl">🌅 早餐菜單</a></div>
         <div className="flex-none w-full md:w-auto">
           <div className="flex flex-wrap gap-2 items-center md:justify-end">
-            <div className="badge badge-primary">
-              {items.length} 個品項・{grouped.categories.length} 類
-            </div>
-            <div className="badge badge-secondary">
-              購物車 {cartItemCount} 件
-            </div>
+            <div className="badge badge-primary">{items.length} 個品項・{grouped.categories.length} 類</div>
+            <div className="badge badge-secondary">購物車 {cartItemCount} 件</div>
             <div className="badge badge-accent">總計 ${cartTotal}</div>
-            <button
-              className="btn btn-sm btn-outline"
-              onClick={() => {
-                setIsCartOpen(true);
-              }}
-            >
-              購物車明細
-            </button>
+            <button className="btn btn-sm btn-outline" onClick={() => setIsCartOpen(true)}>購物車明細</button>
           </div>
         </div>
       </div>
 
       <main className="container mx-auto p-6">
-        {actionError ? (
-          <div className="alert alert-warning mb-4">
-            <span>{actionError}</span>
-          </div>
-        ) : null}
-
-        {items.length === 0 ? (
-          <div className="alert alert-info">
-            <span>目前沒有菜單資料</span>
-          </div>
-        ) : (
+        {actionError && <div className="alert alert-warning mb-4"><span>{actionError}</span></div>}
+        {items.length === 0 ? <div className="alert alert-info"><span>目前沒有菜單資料</span></div> : (
           grouped.categories.map((category) => (
             <div key={category} className="mb-8">
-              <h2 className="text-3xl font-bold mb-4 text-primary border-b-2 border-primary pb-2">
-                {category}
-              </h2>
+              <h2 className="text-3xl font-bold mb-4 text-primary border-b-2 border-primary pb-2">{category}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {(grouped.groupedItems[category] || []).map((item) => (
-                  <div
-                    key={item.id}
-                    className="card bg-base-100 shadow-md hover:shadow-lg transition-shadow"
-                  >
+                  <div key={item.id} className="card bg-base-100 shadow-md hover:shadow-lg transition-shadow">
                     <figure className="h-44 overflow-hidden bg-base-300">
                       <img
-                        src={item.image_url}
+                        src={(item as any).image_url ? `/${(item as any).image_url.replace("public/", "").replace(/^\/+/, "")}` : "https://images.unsplash.com/photo-1526318896980-cf78c088247c?auto=format&fit=crop&w=800&q=80"}
                         alt={item.name}
                         className="w-full h-full object-cover"
                         loading="lazy"
-                        onError={(event) => {
-                          const target = event.currentTarget;
-                          target.src =
-                            "https://images.unsplash.com/photo-1526318896980-cf78c088247c?auto=format&fit=crop&w=800&q=80";
-                        }}
+                        onError={(e) => { e.currentTarget.src = "https://images.unsplash.com/photo-1526318896980-cf78c088247c?auto=format&fit=crop&w=800&q=80"; }}
                       />
                     </figure>
                     <div className="card-body">
                       <h3 className="card-title text-lg">{item.name}</h3>
-                      <p className="text-sm opacity-80 line-clamp-2 min-h-[2.75rem]">
-                        {item.description}
-                      </p>
+                      <p className="text-sm opacity-80 line-clamp-2 min-h-[2.75rem]">{item.description}</p>
                       <div className="card-actions justify-between items-center">
-                        <span className="text-xl font-bold text-success">
-                          ${item.price}
-                        </span>
+                        <span className="text-xl font-bold text-success">${item.price}</span>
                         <button
                           className="btn btn-sm btn-primary"
-                          onClick={() => {
-                            void addToCart(item);
-                          }}
-                          disabled={activeItemId === item.id}
+                          onClick={() => void addToCart(item)}
+                          disabled={activeItemId === String(item.id)}
                         >
-                          {activeItemId === item.id
-                            ? "加入中..."
-                            : `加入購物車${cartQtyByItemId[item.id] ? ` (${cartQtyByItemId[item.id]})` : ""}`}
+                          {activeItemId === String(item.id) ? "加入中..." : `加入購物車${cartQtyByItemId[String(item.id)] ? ` (${cartQtyByItemId[String(item.id)]})` : ""}`}
                         </button>
                       </div>
                     </div>
@@ -362,45 +227,22 @@ export default function App() {
         )}
       </main>
 
-      {isCartOpen ? (
+      {isCartOpen && (
         <>
-          <button
-            className="fixed inset-0 bg-black/35"
-            aria-label="close cart drawer"
-            onClick={() => {
-              setIsCartOpen(false);
-            }}
-          />
+          <button className="fixed inset-0 bg-black/35" aria-label="close cart drawer" onClick={() => setIsCartOpen(false)} />
           <aside className="fixed right-0 top-0 h-full w-full max-w-md bg-base-100 shadow-2xl z-10 flex flex-col">
             <div className="p-4 border-b border-base-300 flex items-center justify-between">
               <h2 className="text-xl font-bold">購物車明細</h2>
-              <button
-                className="btn btn-sm btn-ghost"
-                onClick={() => {
-                  setIsCartOpen(false);
-                }}
-              >
-                關閉
-              </button>
+              <button className="btn btn-sm btn-ghost" onClick={() => setIsCartOpen(false)}>關閉</button>
             </div>
-
             <div className="p-4 flex-1 overflow-auto">
-              {cartDetails.length === 0 ? (
-                <div className="alert">
-                  <span>購物車目前是空的。</span>
-                </div>
-              ) : (
+              {cartDetails.length === 0 ? <div className="alert"><span>購物車目前是空的。</span></div> : (
                 <ul className="space-y-3">
                   {cartDetails.map((detail) => (
-                    <li
-                      key={detail.itemId}
-                      className="p-3 rounded-lg bg-base-200 flex items-center justify-between"
-                    >
+                    <li key={detail.itemId} className="p-3 rounded-lg bg-base-200 flex items-center justify-between">
                       <div>
                         <p className="font-semibold">{detail.item.name}</p>
-                        <p className="text-sm opacity-70">
-                          單價 ${detail.item.price} x {detail.qty}
-                        </p>
+                        <p className="text-sm opacity-70">單價 ${detail.item.price} x {detail.qty}</p>
                       </div>
                       <p className="font-bold">${detail.subtotal}</p>
                     </li>
@@ -408,29 +250,16 @@ export default function App() {
                 </ul>
               )}
             </div>
-
             <div className="p-4 border-t border-base-300 space-y-3">
-              <div className="flex items-center justify-between font-semibold">
-                <span>總件數</span>
-                <span>{cartItemCount}</span>
-              </div>
-              <div className="flex items-center justify-between text-lg font-bold">
-                <span>總金額</span>
-                <span>${cartTotal}</span>
-              </div>
-              <button
-                className="btn btn-error btn-outline w-full"
-                onClick={() => {
-                  void clearCart();
-                }}
-                disabled={cartDetails.length === 0 || isClearingCart}
-              >
+              <div className="flex items-center justify-between font-semibold"><span>總件數</span><span>{cartItemCount}</span></div>
+              <div className="flex items-center justify-between text-lg font-bold"><span>總金額</span><span>${cartTotal}</span></div>
+              <button className="btn btn-error btn-outline w-full" onClick={() => void clearCart()} disabled={cartDetails.length === 0 || isClearingCart}>
                 {isClearingCart ? "清空中..." : "清空購物車"}
               </button>
             </div>
           </aside>
         </>
-      ) : null}
+      )}
     </div>
   );
 }
