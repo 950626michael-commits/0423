@@ -1,5 +1,6 @@
 // backend.ts - 修正 ID 型別處理與靜態網頁掛載版
-
+import { db } from "./db/client";
+import { menuItemsTable } from "./db/schema";
 import { Elysia } from "elysia";
 import { staticPlugin } from '@elysiajs/static'; 
 import { openapi } from "@elysiajs/openapi";
@@ -89,8 +90,11 @@ app.use(openapi({ path: "/openapi", specPath: "/openapi/json", documentation: { 
 app.onRequest(({ request }) => { console.log(`[${toTaipeiDateTime(new Date().toISOString())}] ${request.method} ${new URL(request.url).pathname}`); });
 
 // ─── 菜單路由區 ───
-app.get("/api/menu", () => ({ data: [...store.getMenu()] }));
-
+// 2. 把原本那行改成非同步去 Neon 撈資料，並且維持前端要的 { data: [...] } 包裝結構
+app.get("/api/menu", async () => {
+  const menuItems = await db.select().from(menuItemsTable);
+  return { data: menuItems };
+});
 app.patch("/api/menu/:id", async ({ params: { id }, body, request, set }) => {
   await requireAnyRole(request, ["admin", "owner"]);
   const updateData = body as { 

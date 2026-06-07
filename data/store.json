@@ -32,203 +32,33 @@
     {
       "id": 1,
       "items": [
-        {
-          "item": {
-            "id": 7,
-            "name": "紅茶",
-            "price": 25,
-            "category": "飲料",
-            "description": "古早味紅茶，微糖微冰為店內推薦比例，適合作為早餐基本配備。",
-            "image_url": "/imgs/menu/black-tea.webp"
-          },
-          "qty": 2
-        },
-        {
-          "item": {
-            "id": 8,
-            "name": "奶茶",
-            "price": 30,
-            "category": "飲料",
-            "description": "使用紅茶搭配奶精調和，香濃順口，是最受歡迎的經典飲品。",
-            "image_url": "/imgs/menu/milk-tea.webp"
-          },
-          "qty": 1
-        },
-        {
-          "item": {
-            "id": 1,
-            "name": "火腿蛋吐司",
-            "price": 40,
-            "category": "餐點",
-            "description": "現煎雞蛋搭配火腿與生菜，使用微烤白吐司，口感清爽不油膩。",
-            "image_url": "/imgs/menu/ham-egg-toast.webp"
-          },
-          "qty": 2
-        }
+        { "item": { "id": "5-01", "name": "紅茶", "price": 25, "category": "飲料", "image_url": "/imgs/menu/black-tea.webp" }, "qty": 2 },
+        { "item": { "id": "5-02", "name": "奶茶", "price": 30, "category": "飲料", "image_url": "/imgs/menu/milk-tea.webp" }, "qty": 1 },
+        { "item": { "id": "1-01", "name": "火腿蛋吐司", "price": 40, "category": "餐點", "image_url": "/imgs/menu/ham-egg-toast.webp" }, "qty": 2 }
       ],
       "total": 160,
       "status": "submitted",
-      "createdAt": "2026-04-03T15:49:00.310Z",
-      "userId": "0001",
-      "submittedAt": "2026-04-05T12:45:30.676Z"
+      "userId": "0001"
     },
     {
       "id": 2,
       "items": [
-        {
-          "item": {
-            "id": 8,
-            "name": "奶茶",
-            "price": 30,
-            "category": "飲料",
-            "description": "使用紅茶搭配奶精調和，香濃順口，是最受歡迎的經典飲品。",
-            "image_url": "/imgs/menu/milk-tea.webp"
-          },
-          "qty": 1
-        },
-        {
-          "item": {
-            "id": 1,
-            "name": "火腿蛋吐司",
-            "price": 40,
-            "category": "餐點",
-            "description": "現煎雞蛋搭配火腿與生菜，使用微烤白吐司，口感清爽不油膩。",
-            "image_url": "/imgs/menu/ham-egg-toast.webp"
-          },
-          "qty": 2
-        },
-        {
-          "item": {
-            "id": 2,
-            "name": "起司豬排堡",
-            "price": 65,
-            "category": "餐點",
-            "description": "厚切豬排搭配起司與生菜，外酥內嫩，適合喜歡有咬勁的你。",
-            "image_url": "/imgs/menu/cheese-pork-burger.webp"
-          },
-          "qty": 1
-        }
+        { "item": { "id": "5-02", "name": "奶茶", "price": 30, "category": "飲料", "image_url": "/imgs/menu/milk-tea.webp" }, "qty": 1 },
+        { "item": { "id": "1-01", "name": "火腿蛋吐司", "price": 40, "category": "餐點", "image_url": "/imgs/menu/ham-egg-toast.webp" }, "qty": 2 },
+        { "item": { "id": "2-01", "name": "起司豬排堡", "price": 65, "category": "餐點", "image_url": "/imgs/menu/cheese-pork-burger.webp" }, "qty": 1 }
       ],
       "total": 175,
       "status": "submitted",
-      "createdAt": "2026-04-03T18:13:00.646Z",
-      "userId": "0001",
-      "submittedAt": "2026-04-05T14:28:29.294Z"
+      "userId": "0001"
     },
     {
       "id": 3,
       "items": [
-        {
-          "item": {
-            "id": 7,
-            "name": "紅茶",
-            "price": 25,
-            "category": "飲料",
-            "description": "古早味紅茶，微糖微冰為店內推薦比例，適合作為早餐基本配備。",
-            "image_url": "/imgs/menu/black-tea.webp"
-          },
-          "qty": 1
-        },
-        {
-          "item": {
-            "id": 1,
-            "name": "火腿蛋吐司",
-            "price": 40,
-            "category": "餐點",
-            "description": "現煎雞蛋搭配火腿與生菜，使用微烤白吐司，口感清爽不油膩。",
-            "image_url": "/imgs/menu/ham-egg-toast.webp"
-          },
-          "qty": 2
-        }
+        { "item": { "id": "5-01", "name": "紅茶", "price": 25, "category": "飲料", "image_url": "/imgs/menu/black-tea.webp" }, "qty": 1 },
+        { "item": { "id": "1-01", "name": "火腿蛋吐司", "price": 40, "category": "餐點", "image_url": "/imgs/menu/ham-egg-toast.webp" }, "qty": 2 }
       ],
       "total": 105,
       "status": "submitted",
-      "createdAt": "2026-04-03T22:36:23.743Z",
-      "userId": "0001",
-      "submittedAt": "2026-04-09T06:13:17.394Z"
-    },
-    {
-      "id": 4,
-      "items": [
-        {
-          "item": {
-            "id": 7,
-            "name": "紅茶",
-            "price": 25,
-            "category": "飲料",
-            "description": "古早味紅茶，微糖微冰為店內推薦比例，適合作為早餐基本配備。",
-            "image_url": "/imgs/menu/black-tea.webp"
-          },
-          "qty": 1
-        },
-        {
-          "item": {
-            "id": 8,
-            "name": "奶茶",
-            "price": 30,
-            "category": "飲料",
-            "description": "使用紅茶搭配奶精調和，香濃順口，是最受歡迎的經典飲品。",
-            "image_url": "/imgs/menu/milk-tea.webp"
-          },
-          "qty": 1
-        },
-        {
-          "item": {
-            "id": 2,
-            "name": "起司豬排堡",
-            "price": 65,
-            "category": "餐點",
-            "description": "厚切豬排搭配起司與生菜，外酥內嫩，適合喜歡有咬勁的你。",
-            "image_url": "/imgs/menu/cheese-pork-burger.webp"
-          },
-          "qty": 3
-        },
-        {
-          "item": {
-            "id": 9,
-            "name": "豆漿",
-            "price": 30,
-            "category": "飲料",
-            "description": "每日現煮黃豆漿，口感濃郁不稀薄，提供無糖與微糖兩種甜度選擇。",
-            "image_url": "/imgs/menu/soy-milk.webp"
-          },
-          "qty": 1
-        }
-      ],
-      "total": 280,
-      "status": "pending",
-      "createdAt": "2026-04-03T22:36:53.556Z",
-      "userId": "0001"
-    },
-    {
-      "id": 5,
-      "items": [
-        {
-          "item": {
-            "id": 8,
-            "name": "奶茶",
-            "price": 30,
-            "category": "飲料",
-            "description": "使用紅茶搭配奶精調和，香濃順口，是最受歡迎的經典飲品。",
-            "image_url": "/imgs/menu/milk-tea.webp"
-          },
-          "qty": 1
-        },
-        {
-          "item": {
-            "id": 7,
-            "name": "紅茶",
-            "price": 25,
-            "category": "飲料",
-            "description": "古早味紅茶，微糖微冰為店內推薦比例，適合作為早餐基本配備。",
-            "image_url": "/imgs/menu/black-tea.webp"
-          },
-          "qty": 1
-        }
-      ],
-      "total": 55,
-      "status": "pending",
-      "createdAt": "2026-04-03T22:43:05.970Z",
       "userId": "0001"
     }
   ],
