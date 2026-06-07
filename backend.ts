@@ -31,6 +31,7 @@ import { auth, getCurrentUser } from "./auth/better-auth.ts";
 const port = parseInt(process.env.PORT || "3000", 10);
 const host = process.env.HOST || "localhost";
 const allowedOrigin = process.env.API_ALLOWED_ORIGIN || "http://localhost:5173";
+// 請確保改成這行 👇
 const store = createStore({ dataFilePath: join(process.cwd(), "data/store.json") });
 
 async function requireUser(request: Request) {
