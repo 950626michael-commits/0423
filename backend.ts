@@ -31,6 +31,14 @@ import { auth, getCurrentUser } from "./auth/better-auth.ts";
 const port = parseInt(process.env.PORT || "3000", 10);
 const host = process.env.HOST || "localhost";
 const allowedOrigin = process.env.API_ALLOWED_ORIGIN || "http://localhost:5173";
+
+// === 🔍 偵錯專用特務 Log 開始 ===
+import fs from 'node:fs';
+const checkPath = join(process.cwd(), "data/store.json");
+console.log("===== 🚨 專案根目錄 (cwd) 實際路徑 =====", process.cwd());
+console.log("===== 🚨 預計讀取的 JSON 絕對路徑 =====", checkPath);
+console.log("===== 🚨 請問這個檔案真的存在嗎？ =====", fs.existsSync(checkPath));
+// === 🔍 偵錯專用特務 Log 結束 ===
 // 請確保改成這行 👇
 const store = createStore({ dataFilePath: join(process.cwd(), "data/store.json") });
 
