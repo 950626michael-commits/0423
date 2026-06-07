@@ -67,7 +67,19 @@ async function requireAnyRole(request: Request, allowedRoles: Role[]) {
 }
 export type Role = "customer" | "staff" | "chef" | "owner" | "admin";
 const app = new Elysia();
+app.onError(({ code, error, request }) => {
+    console.error(`🚨 [Backend Error] 路由: ${request.method} ${request.url}`);
+    console.error(`🚨 錯誤代碼: ${code}`);
+    console.error(`🚨 錯誤詳細內容:`, error);
+    
+    // 👇 用 instanceof 確保安全讀取 message，如果不是 Error 物件就轉成字串
+    const errorMessage = error instanceof Error ? error.message : String(error);
 
+    return {
+      success: false,
+      error: errorMessage || 'Internal Server Error'
+    };
+});
 app.use(cors({ origin: allowedOrigin, credentials: true, methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allowedHeaders: ["Content-Type", "Authorization"] }));
 app.get("/api/auth/*", ({ request }) => auth.handler(request));
 app.post("/api/auth/*", ({ request }) => auth.handler(request));
@@ -100,7 +112,27 @@ app.delete("/api/menu/:id", async ({ params, request, set }) => {
   return { data: removed };
 });
 
+
 // ─── 訂單路由區 ───
+// 1. 補上前端要的 current (取得目前處理中的訂單/購物車)
+app.get("/api/orders/current", async ({ request, set }) => {
+  const user = await requireUser(request);
+  // 檢查你的 store 有沒有取得當前訂單的方法，這裡假設是 getOrders 或特定過濾
+  // 如果你的架構設計是用 /api/orders 就能自動分流，這裡也可以直接調用你原本的邏輯：
+  const userRoles = user.roles || ["customer"];
+  const isStaff = userRoles.some((r) => ["admin", "owner", "chef", "staff"].includes(r));
+  
+  // 這裡先暫時返回跟 /api/orders 一樣的防禦資料，讓前端不噴黃字
+  return { data: (isStaff ? store.getOrders() : store.getOrderHistoryByUserId(user.id)).map(toOrderResponse) };
+});
+
+// 2. 補上前端要的 history (取得歷史訂單)
+app.get("/api/orders/history", async ({ request }) => {
+  const user = await requireUser(request);
+  // 這裡專門撈該使用者的歷史紀錄
+  return { data: store.getOrderHistoryByUserId(user.id).map(toOrderResponse) };
+});
+
 app.get("/api/orders", async ({ request }) => {
   const user = await requireUser(request);
   const userRoles = user.roles || ["customer"];
