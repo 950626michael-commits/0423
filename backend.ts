@@ -114,25 +114,37 @@ app.delete("/api/menu/:id", async ({ params, request, set }) => {
 
 
 // ─── 訂單路由區 ───
-// 1. 補上前端要的 current (取得目前處理中的訂單/購物車)
-app.get("/api/orders/current", async ({ request, set }) => {
+
+// 1. 取得目前處理中的訂單/購物車（修正：必須回傳單一物件或 null）
+app.get("/api/orders/current", async ({ request }) => {
   const user = await requireUser(request);
-  // 檢查你的 store 有沒有取得當前訂單的方法，這裡假設是 getOrders 或特定過濾
-  // 如果你的架構設計是用 /api/orders 就能自動分流，這裡也可以直接調用你原本的邏輯：
-  const userRoles = user.roles || ["customer"];
-  const isStaff = userRoles.some((r) => ["admin", "owner", "chef", "staff"].includes(r));
-  
-  // 這裡先暫時返回跟 /api/orders 一樣的防禦資料，讓前端不噴黃字
-  return { data: (isStaff ? store.getOrders() : store.getOrderHistoryByUserId(user.id)).map(toOrderResponse) };
+  const userOrders = store.getOrderHistoryByUserId(user.id);
+
+  // 💡 關鍵安全防禦：從該使用者的歷史紀錄中，找出那一筆「還沒送出」的購物車訂單
+  const currentCart = userOrders.find((o: any) => {
+    if ('status' in o) return o.status === 'cart' || o.status === 'pending';
+    if ('isSubmitted' in o) return !o.isSubmitted;
+    return false; 
+  });
+
+  // 如果找不到進行中的訂單，就回傳 null，前端收到 null 就會知道「目前購物車是空的」，絕對不會崩潰！
+  if (!currentCart) {
+    return { data: null };
+  }
+
+  return { data: toOrderResponse(currentCart) };
 });
 
-// 2. 補上前端要的 history (取得歷史訂單)
+// 2. 取得歷史訂單（回傳陣列）
 app.get("/api/orders/history", async ({ request }) => {
   const user = await requireUser(request);
-  // 這裡專門撈該使用者的歷史紀錄
-  return { data: store.getOrderHistoryByUserId(user.id).map(toOrderResponse) };
+  const userOrders = store.getOrderHistoryByUserId(user.id);
+  
+  // 這裡回傳陣列給前端歷史紀錄區
+  return { data: userOrders.map(toOrderResponse) };
 });
 
+// 3. 取得所有訂單（管理員/員工看全部，顧客看自己的）
 app.get("/api/orders", async ({ request }) => {
   const user = await requireUser(request);
   const userRoles = user.roles || ["customer"];
@@ -140,6 +152,7 @@ app.get("/api/orders", async ({ request }) => {
   return { data: (isStaff ? store.getOrders() : store.getOrderHistoryByUserId(user.id)).map(toOrderResponse) };
 });
 
+// 4. 根據 ID 查詢特定訂單（動態路由務必放下面，才不會攔截 current 和 history）
 app.get("/api/orders/:id", async ({ params, request, set }) => {
   const user = await requireUser(request);
   const order = store.getOrderById(params.id); 
@@ -150,6 +163,7 @@ app.get("/api/orders/:id", async ({ params, request, set }) => {
   return { data: toOrderResponse(order) };
 });
 
+// 5. 修改訂單品項與數量
 app.patch("/api/orders/:id", async ({ params, body, request, set }) => {
   const user = await requireUser(request);
   const { itemId, qty } = body as { itemId: string | number; qty: number };
@@ -168,6 +182,7 @@ app.patch("/api/orders/:id", async ({ params, body, request, set }) => {
   return { data: toOrderResponse(result.order) };
 });
 
+// 6. 送出結帳訂單
 app.post("/api/orders/:id/submit", async ({ params, request, set }) => {
   const user = await requireUser(request);
   const result = await store.submitOrder(params.id, { userId: user.id }); 
