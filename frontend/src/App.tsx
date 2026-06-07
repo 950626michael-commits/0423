@@ -14,20 +14,21 @@ function buildApiUrl(path: string) {
 }
 
 export default function App() {
+  // 💡 V10 修正：將所有與 ID 相關的狀態從 number 改為 string
   const [user, setUser] = useState<SessionUser | null>(null);
   const [authError, setAuthError] = useState("");
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [orderId, setOrderId] = useState<number | null>(null);
+  const [orderId, setOrderId] = useState<string | null>(null); // 👈 number -> string
   const [historyOrders, setHistoryOrders] = useState<Order[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [cartQtyByItemId, setCartQtyByItemId] = useState<
-    Record<number, number>
+    Record<string, number> // 👈 number -> string 鍵值
   >({});
   const [cartTotal, setCartTotal] = useState(0);
-  const [activeItemId, setActiveItemId] = useState<number | null>(null);
+  const [activeItemId, setActiveItemId] = useState<string | null>(null); // 👈 number -> string
   const [actionError, setActionError] = useState("");
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isClearingCart, setIsClearingCart] = useState(false);
@@ -39,7 +40,7 @@ export default function App() {
         acc[orderItem.item.id] = orderItem.qty;
         return acc;
       },
-      {} as Record<number, number>,
+      {} as Record<string, number>, // 👈 累加器型態同步改為 string 鍵值
     );
 
     setCartQtyByItemId(nextQtyByItemId);
@@ -101,7 +102,6 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
 
-    // V9: 從 Better Auth session cookie 恢復登入狀態（不再用 localStorage）
     async function restoreSession() {
       try {
         const res = await fetch(buildApiUrl("/api/auth/get-session"), {
@@ -195,7 +195,8 @@ export default function App() {
 
     return Object.entries(cartQtyByItemId)
       .map(([itemIdText, qty]) => {
-        const itemId = Number(itemIdText);
+        // 💡 V10 修正：移除 Number() 轉型，直接將 itemIdText 當成字串 ID 使用
+        const itemId = itemIdText; 
         const item = itemById.get(itemId);
         if (!item || qty <= 0) {
           return null;
@@ -211,7 +212,8 @@ export default function App() {
       .filter((entry) => entry !== null);
   }, [cartQtyByItemId, items]);
 
-  async function ensureOrder(): Promise<number> {
+  // 💡 V10 修正：確保回傳的是 Promise<string>
+  async function ensureOrder(): Promise<string> {
     if (!user) {
       throw new Error("Please login first");
     }
@@ -255,8 +257,6 @@ export default function App() {
     setAuthError("");
     setIsGoogleSigningIn(true);
     try {
-      // Better Auth 的 social sign-in 入口是 POST。
-      // 先向後端取得導向 Google 同意頁的 URL，再切換瀏覽器位置。
       const callbackURL = window.location.origin;
       const response = await fetch(buildApiUrl("/api/auth/sign-in/social"), {
         method: "POST",
@@ -282,11 +282,8 @@ export default function App() {
   }
 
   async function handleLogout(): Promise<void> {
-    // 使用 /api/sign-out（server-side proxy），避免 Better Auth CSRF 驗證
-    // 因 BETTER_AUTH_URL 設定錯誤造成的假登出（403 被吃掉）。
-    // 若登出失敗，顯示錯誤並中止，確保使用者知道 session 仍存在。
     try {
-      const res = await fetch(buildApiUrl("/api/sign-out"), {
+      const res = await fetch(buildApiUrl("/api/auth/sign-out"), {
         method: "POST",
         credentials: "include",
       });
@@ -316,7 +313,7 @@ export default function App() {
       }
 
       const patchOrderItem = async (
-        targetOrderId: number,
+        targetOrderId: string, // 👈 number -> string
         qty: number,
       ): Promise<Order> => {
         const response = await fetch(
@@ -357,7 +354,6 @@ export default function App() {
         const firstTryMessage =
           firstTryError instanceof Error ? firstTryError.message : "";
 
-        // 換帳號或舊訂單失效時，重新同步目前使用者訂單後再重試一次。
         if (
           firstTryMessage.includes("HTTP 403") ||
           firstTryMessage.includes("HTTP 404")
@@ -419,6 +415,7 @@ export default function App() {
 
     try {
       for (const detail of cartDetails) {
+        if (!detail) continue;
         const response = await fetch(buildApiUrl(`/api/orders/${orderId}`), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -701,20 +698,23 @@ export default function App() {
                 </div>
               ) : (
                 <ul className="space-y-3">
-                  {cartDetails.map((detail) => (
-                    <li
-                      key={detail.itemId}
-                      className="p-3 rounded-lg bg-base-200 flex items-center justify-between"
-                    >
-                      <div>
-                        <p className="font-semibold">{detail.item.name}</p>
-                        <p className="text-sm opacity-70">
-                          單價 ${detail.item.price} x {detail.qty}
-                        </p>
-                      </div>
-                      <p className="font-bold">${detail.subtotal}</p>
-                    </li>
-                  ))}
+                  {cartDetails.map((detail) => {
+                    if (!detail) return null;
+                    return (
+                      <li
+                        key={detail.itemId}
+                        className="p-3 rounded-lg bg-base-200 flex items-center justify-between"
+                      >
+                        <div>
+                          <p className="font-semibold">{detail.item.name}</p>
+                          <p className="text-sm opacity-70">
+                            單價 ${detail.item.price} x {detail.qty}
+                          </p>
+                        </div>
+                        <p className="font-bold">${detail.subtotal}</p>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
