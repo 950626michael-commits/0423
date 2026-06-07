@@ -1,9 +1,11 @@
-// backend.ts - 修正 ID 型別處理版
+// backend.ts - 修正 ID 型別處理與靜態網頁掛載版
 
 import { Elysia } from "elysia";
+import { staticPlugin } from '@elysiajs/static'; 
 import { openapi } from "@elysiajs/openapi";
 import { cors } from "@elysiajs/cors";
 import { existsSync } from "node:fs";
+import { join } from "node:path"; // 👈 1. 引入 join 處理絕對路徑
 import toTaipeiDateTime from "./util.ts";
 import {
   apiErrorResponseSchema,
@@ -30,7 +32,6 @@ const port = parseInt(process.env.PORT || "3000", 10);
 const host = process.env.HOST || "localhost";
 const allowedOrigin = process.env.API_ALLOWED_ORIGIN || "http://localhost:5173";
 const store = createStore({ dataFilePath: "./data/store.json" });
-const hasPublicAssets = existsSync("./public") && existsSync("./public/index.html");
 
 async function requireUser(request: Request) {
   const user = await getCurrentUser(request);
@@ -78,14 +79,14 @@ app.patch("/api/menu/:id", async ({ params: { id }, body, request, set }) => {
     description?: string; 
     image_url?: string; 
   };
-  const menuItem = await store.updateMenuItem(id, updateData); // 直接傳字串 id
+  const menuItem = await store.updateMenuItem(id, updateData); 
   if (!menuItem) { set.status = 404; return { error: "Menu item not found" }; }
   return { data: menuItem };
 });
 
 app.delete("/api/menu/:id", async ({ params, request, set }) => {
   await requireAnyRole(request, ["admin", "owner"]);
-  const removed = await store.deleteMenuItem(params.id); // 直接傳字串 id
+  const removed = await store.deleteMenuItem(params.id); 
   if (!removed) { set.status = 404; return { error: "Menu item not found" }; }
   return { data: removed };
 });
@@ -100,7 +101,7 @@ app.get("/api/orders", async ({ request }) => {
 
 app.get("/api/orders/:id", async ({ params, request, set }) => {
   const user = await requireUser(request);
-  const order = store.getOrderById(params.id); // 直接傳字串 id
+  const order = store.getOrderById(params.id); 
   if (!order) { set.status = 404; return { error: "Order not found" }; }
   
   const isStaff = (user.roles || ["customer"]).some((r) => ["admin", "owner", "chef", "staff"].includes(r));
@@ -110,13 +111,11 @@ app.get("/api/orders/:id", async ({ params, request, set }) => {
 
 app.patch("/api/orders/:id", async ({ params, body, request, set }) => {
   const user = await requireUser(request);
-  
-  // 💡 解決方式：定義一個介面來描述 body，並將其強制轉型
   const { itemId, qty } = body as { itemId: string | number; qty: number };
 
   const result = await store.updateOrderItem(params.id, { 
     userId: user.id, 
-    itemId: String(itemId), // 現在 TypeScript 知道 itemId 存在了
+    itemId: String(itemId), 
     qty: qty 
   });
   
@@ -130,9 +129,29 @@ app.patch("/api/orders/:id", async ({ params, body, request, set }) => {
 
 app.post("/api/orders/:id/submit", async ({ params, request, set }) => {
   const user = await requireUser(request);
-  const result = await store.submitOrder(params.id, { userId: user.id }); // 直接傳字串 id
+  const result = await store.submitOrder(params.id, { userId: user.id }); 
   if (!result.ok) { set.status = 500; return { error: "Submit failed" }; }
   return { data: toOrderResponse(result.order) };
+});
+
+// ─── 2. 靜態網頁與 SPA 路由區 (務必放在最下方) ───
+const publicPath = join(process.cwd(), "public");
+
+app.use(staticPlugin({
+  assets: publicPath,
+  prefix: '/'
+}));
+
+// 攔截所有非 API 請求，直接返回前端 index.html (解決前端 SPA 重新整理 404 的問題)
+app.get("/*", ({ path, set }) => {
+  if (!path.startsWith("/api") && !path.startsWith("/openapi")) {
+    const indexPath = join(publicPath, "index.html");
+    if (existsSync(indexPath)) {
+      return Bun.file(indexPath);
+    }
+  }
+  set.status = 404;
+  return { error: "Not Found" };
 });
 
 // 啟動
