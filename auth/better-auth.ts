@@ -1,0 +1,81 @@
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { eq } from "drizzle-orm";
+import { db } from "../db/client.ts";
+import { user as userTable } from "../db/auth-schema.ts";
+import * as schema from "../db/auth-schema.ts";
+import type { SessionUser } from "../shared/contracts.ts";
+import { toSessionUser } from "./user-mapper.ts";
+
+// ─── Startup guard ────────────────────────────────────────────────────────────
+// BETTER_AUTH_SECRET 必須在啟動時存在且不為佔位值，
+// 否則 session 簽名金鑰會不安全，讓問題在啟動期明確報錯而非靜默失敗。
+const secret = process.env.BETTER_AUTH_SECRET;
+if (!secret || secret === "replaceme") {
+  throw new Error(
+    "BETTER_AUTH_SECRET is required and must not be 'replaceme'. " +
+      "Generate one with: bun -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
+  );
+}
+
+const baseURL = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
+
+// trustedOrigins：CSRF 白名單。預設信任 baseURL。
+// API_ALLOWED_ORIGIN 設定時（如 Vite dev server http://localhost:5173）一併加入，
+// 讓跨 port 開發場景的 sign-out 不會被 CSRF 保護擋住。
+const extraOrigin = process.env.API_ALLOWED_ORIGIN;
+const trustedOrigins =
+  extraOrigin && extraOrigin !== "*" ? [baseURL, extraOrigin] : [baseURL];
+
+const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+const isGoogleProviderConfigured = Boolean(
+  googleClientId && googleClientSecret,
+);
+
+// ─── Better Auth instance ─────────────────────────────────────────────────────
+// V9：只使用 Google OAuth 登入，不提供 email/password 方式。
+// auth tables（user / session / account / verification）存在 bf_v10 schema 下，
+// 與業務 tables（menu_items / orders / order_items）並存於同一 DB。
+export const auth = betterAuth({
+  baseURL,
+  secret,
+  trustedOrigins,
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema,
+  }),
+  emailAndPassword: {
+    enabled: false, // ✅ 禁用 email/password 登入
+  },
+  ...(isGoogleProviderConfigured
+    ? {
+        socialProviders: {
+          google: {
+            clientId: googleClientId!,
+            clientSecret: googleClientSecret!,
+          },
+        },
+      }
+    : {}),
+});
+
+// ─── Session helper ───────────────────────────────────────────────────────────
+// 從 Request headers 取出 session，轉換成 contracts.ts 定義的 SessionUser。
+// DB 層的 Better Auth user 欄位（emailVerified / image / createdAt 等）
+// 不對外暴露，只取 contracts.ts 中定義的三個欄位。
+export async function getCurrentUser(
+  request: Request,
+): Promise<SessionUser | null> {
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session?.user) return null;
+
+  const [dbUser] = await db
+    .select()
+    .from(userTable)
+    .where(eq(userTable.id, session.user.id))
+    .limit(1);
+
+  // DbUser → SessionUser 轉換（延續 contracts.ts 分層原則）
+  return toSessionUser(dbUser ?? session.user);
+}
