@@ -889,16 +889,16 @@ if (hasPublicAssets) {
       });
     }
 
-    // 使用絕對路徑確保在 Render 等環境中也能找到文件
-    const publicDir = import.meta.dir;
-    const staticFilePath = `${publicDir}/public${pathname}`;
+    // 使用 process.cwd() 確保在任何環境中都能找到 public 目錄
+    const publicDir = `${process.cwd()}/public`;
+    const staticFilePath = `${publicDir}${pathname}`;
     const staticFile = Bun.file(staticFilePath);
     if (pathname !== "/" && (await staticFile.exists())) {
       return staticFile;
     }
 
     // SPA fallback: 回傳 index.html
-    return Bun.file(`${publicDir}/public/index.html`);
+    return Bun.file(`${publicDir}/index.html`);
   });
 }
 
