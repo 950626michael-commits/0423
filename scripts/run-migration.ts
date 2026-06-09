@@ -69,10 +69,9 @@ async function main() {
       const sqlPath = join(DRIZZLE_DIR, `${entry.tag}.sql`);
 
       // 逐步執行每個 statement（以 --> statement-breakpoint 分割）
-      const sqlText = (await readFile(sqlPath, "utf-8")).replaceAll(
-        '"bf_v9"',
-        `"${PG_SCHEMA}"`,
-      );
+      const sqlText = (await readFile(sqlPath, "utf-8"))
+        .replaceAll('"bf_v9"', `"${PG_SCHEMA}"`)
+        .replaceAll("'bf_v9'", `'${PG_SCHEMA}'`);
       const statements = sqlText
         .split("--> statement-breakpoint")
         .map((s) => s.trim())
