@@ -4,7 +4,10 @@ node_modules
 # output
 out
 dist
-public/
+public/index.html
+public/assets/
+public/*.js
+public/*.css
 *.tgz
 
 # code coverage
