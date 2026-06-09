@@ -50,6 +50,13 @@
       "when": 1781019000000,
       "tag": "0006_order_items_legacy_menu_item_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781020000000,
+      "tag": "0007_role_requests_upgrade",
+      "breakpoints": true
     }
   ]
 }
