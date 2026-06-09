@@ -5,6 +5,7 @@ import type {
   MenuItem,
   Order,
   Role,
+  RoleRequest,
   SessionUser,
 } from "../../shared/contracts.ts";
 
@@ -32,6 +33,11 @@ export default function App() {
   const [actionError, setActionError] = useState("");
   const [roleRequestStatus, setRoleRequestStatus] = useState("");
   const [requestingRole, setRequestingRole] = useState<Role | null>(null);
+  const [roleRequests, setRoleRequests] = useState<RoleRequest[]>([]);
+  const [roleRequestsLoading, setRoleRequestsLoading] = useState(false);
+  const [reviewingRoleRequestId, setReviewingRoleRequestId] = useState<
+    number | null
+  >(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isClearingCart, setIsClearingCart] = useState(false);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
@@ -109,6 +115,35 @@ export default function App() {
     await Promise.all([loadCurrentOrder(), loadOrderHistory()]);
   }
 
+  async function loadRoleRequests(): Promise<void> {
+    if (!hasRole("admin")) {
+      setRoleRequests([]);
+      return;
+    }
+
+    setRoleRequestsLoading(true);
+    try {
+      const response = await fetch(
+        buildApiUrl("/api/admin/role-requests?status=all"),
+        {
+          credentials: "include",
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`Load role requests failed: HTTP ${response.status}`);
+      }
+
+      const payload = (await response.json()) as ApiDataResponse<RoleRequest[]>;
+      setRoleRequests(Array.isArray(payload?.data) ? payload.data : []);
+    } catch (loadError) {
+      setActionError("載入角色申請失敗，請稍後再試。");
+      console.error(loadError);
+    } finally {
+      setRoleRequestsLoading(false);
+    }
+  }
+
   useEffect(() => {
     let mounted = true;
 
@@ -174,6 +209,15 @@ export default function App() {
       setActionError("載入使用者訂單資料失敗，請稍後再試。");
       console.error(refreshError);
     });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !hasRole("admin")) {
+      setRoleRequests([]);
+      return;
+    }
+
+    void loadRoleRequests();
   }, [user]);
 
   const grouped = useMemo(() => {
@@ -347,6 +391,43 @@ export default function App() {
       setRoleRequestStatus("角色申請發生網路錯誤，請稍後再試。");
     } finally {
       setRequestingRole(null);
+    }
+  }
+
+  async function reviewRoleRequest(
+    requestId: number,
+    status: "approved" | "rejected",
+  ): Promise<void> {
+    setActionError("");
+    setReviewingRoleRequestId(requestId);
+
+    try {
+      const response = await fetch(
+        buildApiUrl(`/api/admin/role-requests/${requestId}`),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            status,
+            reviewNote:
+              status === "approved"
+                ? "Approved from admin panel"
+                : "Rejected from admin panel",
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`Review role request failed: HTTP ${response.status}`);
+      }
+
+      await loadRoleRequests();
+    } catch (reviewError) {
+      setActionError("審核角色申請失敗，請稍後再試。");
+      console.error(reviewError);
+    } finally {
+      setReviewingRoleRequestId(null);
     }
   }
 
@@ -618,7 +699,7 @@ export default function App() {
           </div>
         ) : null}
 
-        {user && !hasAnyRole(["staff", "chef", "owner", "admin"]) ? (
+        {user && !hasRole("admin") ? (
           <section className="mb-6 rounded-lg border border-base-300 bg-base-100 p-4 shadow-sm">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
@@ -637,7 +718,7 @@ export default function App() {
                   onClick={() => {
                     void requestRole("staff");
                   }}
-                  disabled={requestingRole !== null}
+                  disabled={requestingRole !== null || hasRole("staff")}
                 >
                   {requestingRole === "staff" ? "送出中..." : "申請 staff"}
                 </button>
@@ -646,7 +727,7 @@ export default function App() {
                   onClick={() => {
                     void requestRole("chef");
                   }}
-                  disabled={requestingRole !== null}
+                  disabled={requestingRole !== null || hasRole("chef")}
                 >
                   {requestingRole === "chef" ? "送出中..." : "申請 chef"}
                 </button>
@@ -661,6 +742,112 @@ export default function App() {
             <p className="text-sm opacity-75">
               你可以使用 POST/PATCH/DELETE /api/menu 管理菜單品項。
             </p>
+          </section>
+        ) : null}
+
+        {user && hasRole("admin") ? (
+          <section className="mb-6 rounded-lg border border-info/40 bg-base-100 p-4 shadow-sm">
+            <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-bold">角色申請審核</h2>
+                <p className="text-sm opacity-75">
+                  查看使用者送出的 staff / chef 申請，審核通過後會自動加入角色。
+                </p>
+              </div>
+              <button
+                className="btn btn-sm btn-outline"
+                onClick={() => {
+                  void loadRoleRequests();
+                }}
+                disabled={roleRequestsLoading}
+              >
+                {roleRequestsLoading ? "重新整理中..." : "重新整理"}
+              </button>
+            </div>
+
+            {roleRequestsLoading ? (
+              <div className="alert">
+                <span>載入角色申請中...</span>
+              </div>
+            ) : roleRequests.length === 0 ? (
+              <div className="alert alert-info">
+                <span>目前沒有角色申請。</span>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>User ID</th>
+                      <th>申請角色</th>
+                      <th>狀態</th>
+                      <th>原因</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roleRequests.map((request) => (
+                      <tr key={request.id}>
+                        <td>{request.id}</td>
+                        <td className="max-w-[12rem] truncate">
+                          {request.userId}
+                        </td>
+                        <td>{request.requestedRole}</td>
+                        <td>
+                          <span
+                            className={`badge ${
+                              request.status === "pending"
+                                ? "badge-warning"
+                                : request.status === "approved"
+                                  ? "badge-success"
+                                  : "badge-error"
+                            }`}
+                          >
+                            {request.status}
+                          </span>
+                        </td>
+                        <td className="max-w-xs truncate">{request.reason}</td>
+                        <td>
+                          {request.status === "pending" ? (
+                            <div className="flex gap-2">
+                              <button
+                                className="btn btn-xs btn-success"
+                                onClick={() => {
+                                  void reviewRoleRequest(
+                                    request.id,
+                                    "approved",
+                                  );
+                                }}
+                                disabled={reviewingRoleRequestId !== null}
+                              >
+                                通過
+                              </button>
+                              <button
+                                className="btn btn-xs btn-error btn-outline"
+                                onClick={() => {
+                                  void reviewRoleRequest(
+                                    request.id,
+                                    "rejected",
+                                  );
+                                }}
+                                disabled={reviewingRoleRequestId !== null}
+                              >
+                                拒絕
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-sm opacity-60">
+                              已審核
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         ) : null}
 
