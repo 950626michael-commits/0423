@@ -1,9 +1,3 @@
----
-noteId: "d10913823ee211f185ead73ffc185340"
-tags: []
-
----
-
 # Drizzle + Neon 註冊與升級實作步驟清單（V8 前置講義）
 
 這份文件是 V8（Drizzle + Neon 資料庫升級版）的實作型講義。

@@ -1,9 +1,3 @@
----
-noteId: "d10913803ee211f185ead73ffc185340"
-tags: []
-
----
-
 # 從老師 repo 建立自己的 repo，並持續同步上游
 
 這份文件的目的，是讓學生學會一個很實務的開發起手式：
@@ -148,6 +142,7 @@ git switch -c feat/v8-student-custom
 之後平常開發就是：
 
 ```bash
+git status
 git add .
 git commit -m "feat: customize menu flow"
 git push -u origin feat/my-menu-redesign

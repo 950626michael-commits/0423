@@ -1,9 +1,3 @@
----
-noteId: "d1093a963ee211f185ead73ffc185340"
-tags: []
-
----
-
 # V3 `normalizeMenuItem()` 相容舊資料說明
 
 本文件屬於補充講義，建議搭配下列主線講義一起閱讀：

@@ -4,24 +4,20 @@ import type {
   ApiDataResponse,
   MenuItem,
   Order,
-  User,
+  Role,
+  SessionUser,
 } from "../../shared/contracts.ts";
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
-const USER_STORAGE_KEY = "breakfast.user";
-
-type SafeUser = Omit<User, "password">;
 
 function buildApiUrl(path: string) {
   return `${apiBaseUrl}${path}`;
 }
 
 export default function App() {
-  const [user, setUser] = useState<SafeUser | null>(null);
-  const [emailInput, setEmailInput] = useState("demo@example.com");
-  const [passwordInput, setPasswordInput] = useState("1234");
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [authError, setAuthError] = useState("");
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -34,6 +30,8 @@ export default function App() {
   const [cartTotal, setCartTotal] = useState(0);
   const [activeItemId, setActiveItemId] = useState<number | null>(null);
   const [actionError, setActionError] = useState("");
+  const [roleRequestStatus, setRoleRequestStatus] = useState("");
+  const [requestingRole, setRequestingRole] = useState<Role | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isClearingCart, setIsClearingCart] = useState(false);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
@@ -55,12 +53,21 @@ export default function App() {
     setOrderId(null);
     setCartQtyByItemId({});
     setCartTotal(0);
+    setIsCartOpen(false);
   }
 
-  async function loadCurrentOrder(targetUserId: number): Promise<Order | null> {
-    const response = await fetch(
-      buildApiUrl(`/api/orders/current?userId=${targetUserId}`),
-    );
+  function hasRole(role: Role): boolean {
+    return user?.roles.includes(role) ?? false;
+  }
+
+  function hasAnyRole(roles: Role[]): boolean {
+    return roles.some((role) => hasRole(role));
+  }
+
+  async function loadCurrentOrder(): Promise<Order | null> {
+    const response = await fetch(buildApiUrl("/api/orders/current"), {
+      credentials: "include",
+    });
 
     if (!response.ok) {
       throw new Error(`Load current order failed: HTTP ${response.status}`);
@@ -79,13 +86,13 @@ export default function App() {
     return currentOrder;
   }
 
-  async function loadOrderHistory(targetUserId: number): Promise<void> {
+  async function loadOrderHistory(): Promise<void> {
     setHistoryLoading(true);
 
     try {
-      const response = await fetch(
-        buildApiUrl(`/api/orders/history?userId=${targetUserId}`),
-      );
+      const response = await fetch(buildApiUrl("/api/orders/history"), {
+        credentials: "include",
+      });
 
       if (!response.ok) {
         throw new Error(`Load history failed: HTTP ${response.status}`);
@@ -98,35 +105,30 @@ export default function App() {
     }
   }
 
-  async function refreshUserOrders(targetUserId: number): Promise<void> {
-    await Promise.all([
-      loadCurrentOrder(targetUserId),
-      loadOrderHistory(targetUserId),
-    ]);
+  async function refreshUserOrders(): Promise<void> {
+    await Promise.all([loadCurrentOrder(), loadOrderHistory()]);
   }
 
   useEffect(() => {
     let mounted = true;
 
-    const savedUser = window.localStorage.getItem(USER_STORAGE_KEY);
-    if (savedUser) {
+    // V9: 從 Better Auth session cookie 恢復登入狀態（不再用 localStorage）
+    async function restoreSession() {
       try {
-        const parsedUser = JSON.parse(savedUser) as Partial<SafeUser>;
-        if (
-          typeof parsedUser.id === "number" &&
-          typeof parsedUser.email === "string" &&
-          typeof parsedUser.name === "string"
-        ) {
-          setUser({
-            id: parsedUser.id,
-            email: parsedUser.email,
-            name: parsedUser.name,
-          });
+        const res = await fetch(buildApiUrl("/api/users/me"), {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = (await res.json()) as ApiDataResponse<SessionUser>;
+          if (data?.data && mounted) {
+            setUser(data.data);
+          }
         }
       } catch {
-        window.localStorage.removeItem(USER_STORAGE_KEY);
+        // session 無法取得，維持未登入狀態
       }
     }
+    void restoreSession();
 
     async function loadMenu() {
       try {
@@ -163,11 +165,12 @@ export default function App() {
   useEffect(() => {
     if (!user) {
       setHistoryOrders([]);
+      setIsCartOpen(false);
       resetCartState();
       return;
     }
 
-    void refreshUserOrders(user.id).catch((refreshError) => {
+    void refreshUserOrders().catch((refreshError) => {
       setActionError("載入使用者訂單資料失敗，請稍後再試。");
       console.error(refreshError);
     });
@@ -231,12 +234,12 @@ export default function App() {
     const response = await fetch(buildApiUrl("/api/orders"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: user.id }),
+      credentials: "include",
+      body: JSON.stringify({}),
     });
 
     if (!response.ok) {
-      if ([401, 403, 404].includes(response.status)) {
-        window.localStorage.removeItem(USER_STORAGE_KEY);
+      if ([401, 403].includes(response.status)) {
         setUser(null);
         setAuthError("登入狀態已失效，請重新登入。");
         setActionError("登入狀態已失效，請重新登入。");
@@ -259,51 +262,92 @@ export default function App() {
     return createdOrderId;
   }
 
-  async function handleLogin(): Promise<void> {
+  async function handleGoogleSignIn(): Promise<void> {
     setAuthError("");
-    setActionError("");
-    setIsLoggingIn(true);
-
+    setIsGoogleSigningIn(true);
     try {
-      const response = await fetch(buildApiUrl("/api/auth/login"), {
+      // Better Auth 的 social sign-in 入口是 POST。
+      // 先向後端取得導向 Google 同意頁的 URL，再切換瀏覽器位置。
+      const callbackURL = window.location.origin;
+      const response = await fetch(buildApiUrl("/api/auth/sign-in/social"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: emailInput.trim(),
-          password: passwordInput,
-        }),
+        credentials: "include",
+        body: JSON.stringify({ provider: "google", callbackURL }),
       });
 
       if (!response.ok) {
-        throw new Error(`Login failed: HTTP ${response.status}`);
+        throw new Error(`Google sign-in failed: HTTP ${response.status}`);
       }
 
-      const payload = (await response.json()) as ApiDataResponse<SafeUser>;
-      const loggedInUser = payload?.data;
-
-      if (!loggedInUser) {
-        throw new Error("Login failed: invalid payload");
+      const payload = (await response.json()) as { url?: string };
+      if (!payload?.url) {
+        throw new Error("Google sign-in failed: missing redirect URL");
       }
 
-      setUser(loggedInUser);
-      window.localStorage.setItem(
-        USER_STORAGE_KEY,
-        JSON.stringify(loggedInUser),
-      );
-    } catch (loginError) {
-      setAuthError("登入失敗，請確認帳號與密碼。");
-      console.error(loginError);
-    } finally {
-      setIsLoggingIn(false);
+      window.location.href = payload.url;
+    } catch {
+      setAuthError("Google 登入啟動失敗，請稍後再試。");
+      setIsGoogleSigningIn(false);
     }
   }
 
-  function handleLogout() {
-    window.localStorage.removeItem(USER_STORAGE_KEY);
+  async function handleLogout(): Promise<void> {
+    // 使用 /api/sign-out（server-side proxy），避免 Better Auth CSRF 驗證
+    // 因 BETTER_AUTH_URL 設定錯誤造成的假登出（403 被吃掉）。
+    // 若登出失敗，顯示錯誤並中止，確保使用者知道 session 仍存在。
+    try {
+      const res = await fetch(buildApiUrl("/api/sign-out"), {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        setActionError(
+          `登出失敗（HTTP ${res.status}），請重試或手動清除瀏覽器 Cookie。`,
+        );
+        return;
+      }
+    } catch {
+      setActionError("登出時發生網路錯誤，請重試。");
+      return;
+    }
     setUser(null);
     setAuthError("");
     setActionError("");
     resetCartState();
+  }
+
+  async function requestRole(role: "staff" | "chef"): Promise<void> {
+    setRoleRequestStatus("");
+    setActionError("");
+    setRequestingRole(role);
+
+    try {
+      const response = await fetch(buildApiUrl("/api/users/me/role-request"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          requestedRole: role,
+          reason: `I would like ${role} access for breakfast shop operations.`,
+        }),
+      });
+
+      if (!response.ok) {
+        const message =
+          response.status === 400
+            ? "你已經有一筆待審核的角色申請。"
+            : `角色申請送出失敗（HTTP ${response.status}）。`;
+        setRoleRequestStatus(message);
+        return;
+      }
+
+      setRoleRequestStatus("角色申請已送出，請等待 admin 審核。");
+    } catch {
+      setRoleRequestStatus("角色申請發生網路錯誤，請稍後再試。");
+    } finally {
+      setRequestingRole(null);
+    }
   }
 
   async function addToCart(item: MenuItem): Promise<void> {
@@ -315,35 +359,70 @@ export default function App() {
         throw new Error("Please login first");
       }
 
+      const patchOrderItem = async (
+        targetOrderId: number,
+        qty: number,
+      ): Promise<Order> => {
+        const response = await fetch(
+          buildApiUrl(`/api/orders/${targetOrderId}`),
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              itemId: item.id,
+              qty,
+            }),
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(`Update order failed: HTTP ${response.status}`);
+        }
+
+        const payload = (await response.json()) as ApiDataResponse<Order>;
+        const updatedOrder = payload?.data;
+
+        if (!updatedOrder) {
+          throw new Error("Update order failed: invalid payload");
+        }
+
+        return updatedOrder;
+      };
+
       const targetOrderId = await ensureOrder();
       const currentQty = cartQtyByItemId[item.id] ?? 0;
       const nextQty = currentQty + 1;
 
-      const response = await fetch(
-        buildApiUrl(`/api/orders/${targetOrderId}`),
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: user.id,
-            itemId: item.id,
-            qty: nextQty,
-          }),
-        },
-      );
+      try {
+        const updatedOrder = await patchOrderItem(targetOrderId, nextQty);
+        syncCartFromOrder(updatedOrder);
+      } catch (firstTryError) {
+        const firstTryMessage =
+          firstTryError instanceof Error ? firstTryError.message : "";
 
-      if (!response.ok) {
-        throw new Error(`Update order failed: HTTP ${response.status}`);
+        // 換帳號或舊訂單失效時，重新同步目前使用者訂單後再重試一次。
+        if (
+          firstTryMessage.includes("HTTP 403") ||
+          firstTryMessage.includes("HTTP 404")
+        ) {
+          setOrderId(null);
+
+          const recoveredOrder = await loadCurrentOrder();
+          const retryOrderId = recoveredOrder?.id ?? (await ensureOrder());
+          const recoveredQty =
+            recoveredOrder?.items.find(
+              (orderItem) => orderItem.item.id === item.id,
+            )?.qty ?? 0;
+          const retryQty = recoveredQty + 1;
+
+          const retriedOrder = await patchOrderItem(retryOrderId, retryQty);
+          syncCartFromOrder(retriedOrder);
+          return;
+        }
+
+        throw firstTryError;
       }
-
-      const payload = (await response.json()) as ApiDataResponse<Order>;
-      const updatedOrder = payload?.data;
-
-      if (!updatedOrder) {
-        throw new Error("Update order failed: invalid payload");
-      }
-
-      syncCartFromOrder(updatedOrder);
     } catch (cartError) {
       if (
         cartError instanceof Error &&
@@ -354,7 +433,7 @@ export default function App() {
 
       if (user) {
         try {
-          const recoveredOrder = await loadCurrentOrder(user.id);
+          const recoveredOrder = await loadCurrentOrder();
           const recoveredQty = recoveredOrder?.items.find(
             (orderItem) => orderItem.item.id === item.id,
           )?.qty;
@@ -387,8 +466,8 @@ export default function App() {
         const response = await fetch(buildApiUrl(`/api/orders/${orderId}`), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({
-            userId: user.id,
             itemId: detail.itemId,
             qty: 0,
           }),
@@ -423,7 +502,8 @@ export default function App() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: user.id }),
+          credentials: "include",
+          body: JSON.stringify({}),
         },
       );
 
@@ -433,7 +513,7 @@ export default function App() {
 
       resetCartState();
       setIsCartOpen(false);
-      await loadOrderHistory(user.id);
+      await loadOrderHistory();
     } catch (submitError) {
       setActionError("送出訂單失敗，請稍後再試。");
       console.error(submitError);
@@ -471,6 +551,11 @@ export default function App() {
             <div className="badge badge-outline">
               {user ? `已登入 ${user.name}` : "尚未登入"}
             </div>
+            {user ? (
+              <div className="badge badge-info">
+                {user.roles.join(" / ")}
+              </div>
+            ) : null}
             <div className="badge badge-primary">
               {items.length} 個品項・{grouped.categories.length} 類
             </div>
@@ -488,7 +573,12 @@ export default function App() {
               購物車明細
             </button>
             {user ? (
-              <button className="btn btn-sm" onClick={handleLogout}>
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  void handleLogout();
+                }}
+              >
                 登出
               </button>
             ) : null}
@@ -500,44 +590,23 @@ export default function App() {
         {!user ? (
           <section className="max-w-xl mx-auto card bg-base-100 shadow-md mb-8">
             <div className="card-body">
-              <h2 className="card-title">登入後開始點餐</h2>
+              <h2 className="card-title">使用 Google 帳號登入</h2>
               <p className="text-sm opacity-70">
-                範例帳號：demo@example.com、amy@example.com，密碼皆為 1234
+                點擊下方按鈕，使用您的 Google 帳號登入後即可開始點餐。
               </p>
-              <label className="form-control w-full">
-                <span className="label-text mb-1">Email</span>
-                <input
-                  className="input input-bordered"
-                  value={emailInput}
-                  onChange={(event) => {
-                    setEmailInput(event.target.value);
-                  }}
-                />
-              </label>
-              <label className="form-control w-full">
-                <span className="label-text mb-1">密碼</span>
-                <input
-                  type="password"
-                  className="input input-bordered"
-                  value={passwordInput}
-                  onChange={(event) => {
-                    setPasswordInput(event.target.value);
-                  }}
-                />
-              </label>
               {authError ? (
                 <div className="alert alert-error">
                   <span>{authError}</span>
                 </div>
               ) : null}
               <button
-                className="btn btn-primary"
+                className="btn btn-primary w-full"
                 onClick={() => {
-                  void handleLogin();
+                  void handleGoogleSignIn();
                 }}
-                disabled={isLoggingIn}
+                disabled={isGoogleSigningIn}
               >
-                {isLoggingIn ? "登入中..." : "登入"}
+                {isGoogleSigningIn ? "導向 Google 中..." : "使用 Google 登入"}
               </button>
             </div>
           </section>
@@ -547,6 +616,52 @@ export default function App() {
           <div className="alert alert-warning mb-4">
             <span>{actionError}</span>
           </div>
+        ) : null}
+
+        {user && !hasAnyRole(["staff", "chef", "owner", "admin"]) ? (
+          <section className="mb-6 rounded-lg border border-base-300 bg-base-100 p-4 shadow-sm">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-bold">角色申請</h2>
+                {roleRequestStatus ? (
+                  <p className="text-sm opacity-75">{roleRequestStatus}</p>
+                ) : (
+                  <p className="text-sm opacity-75">
+                    申請 staff 可查看全店訂單，申請 chef 可協助處理訂單。
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className="btn btn-sm btn-outline"
+                  onClick={() => {
+                    void requestRole("staff");
+                  }}
+                  disabled={requestingRole !== null}
+                >
+                  {requestingRole === "staff" ? "送出中..." : "申請 staff"}
+                </button>
+                <button
+                  className="btn btn-sm btn-outline"
+                  onClick={() => {
+                    void requestRole("chef");
+                  }}
+                  disabled={requestingRole !== null}
+                >
+                  {requestingRole === "chef" ? "送出中..." : "申請 chef"}
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {user && hasAnyRole(["owner", "admin"]) ? (
+          <section className="mb-6 rounded-lg border border-primary/30 bg-base-100 p-4 shadow-sm">
+            <h2 className="text-lg font-bold">菜單管理權限已啟用</h2>
+            <p className="text-sm opacity-75">
+              你可以使用 POST/PATCH/DELETE /api/menu 管理菜單品項。
+            </p>
+          </section>
         ) : null}
 
         {items.length === 0 ? (
@@ -652,7 +767,7 @@ export default function App() {
         ) : null}
       </main>
 
-      {isCartOpen ? (
+      {user && isCartOpen ? (
         <>
           <button
             className="fixed inset-0 bg-black/35"

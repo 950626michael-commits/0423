@@ -1,9 +1,3 @@
----
-noteId: "d1093a923ee211f185ead73ffc185340"
-tags: []
-
----
-
 # 為什麼這個專案選 Drizzle + Neon
 
 建議前置閱讀：
@@ -35,8 +29,8 @@ tags: []
 
 - 把 `data/store.json` 換成正式資料庫
 - 引進 ORM 與 migration
-- 並且使用雲端 Serverless PostgreSQL
 - 後續再接 `Better Auth`
+- 並且使用雲端 Serverless PostgreSQL
 
 那麼最建議的選擇是：
 
@@ -59,7 +53,7 @@ tags: []
 
 1. 是否容易和目前的 `TypeScript + Elysia` 技術棧整合
 2. 是否能支援後續的 `Better Auth`
-3. 是否能容易理解資料模型、關聯與 migration
+3. 是否能讓理解資料模型、關聯與 migration
 4. 是否不會因平台限制，讓上課時一直卡在冷啟動、額度不足或帳號問題
 5. 是否能從教學專案平順走向較正式的系統架構
 
@@ -109,7 +103,7 @@ tags: []
 
 `Drizzle` 常被視為 SQL-first / TypeScript-first 的 ORM。
 
-這代表它不像某些 ORM 會把資料庫細節包得太深，而是仍然看得到：
+這代表它不像某些 ORM 會把資料庫細節包得太深，而是讓仍然看得到：
 
 - 欄位型別
 - foreign key
@@ -194,7 +188,7 @@ Prisma 的 model 定義與 client 體驗，對很多開發者來說比 SQL-first
 - 雲端 PostgreSQL
 - 後續接 Better Auth
 
-在這個過程中，更接近資料庫本體與 SQL 思維，比先得到一個很順手的 ORM API，更有長期價值。
+在這個過程中，讓更接近資料庫本體與 SQL 思維，比讓先得到一個很順手的 ORM API，更有長期價值。
 
 因此不是「Drizzle 比 Prisma 簡單」，而是：
 
@@ -202,7 +196,7 @@ Prisma 的 model 定義與 client 體驗，對很多開發者來說比 SQL-first
 
 ---
 
-## 7. 「會不會學不起來」？
+## 7. 怎麼回應「會不會學不起來」這個擔心
 
 這個擔心是合理的，但可以透過教學設計解掉，而不一定需要改選 Prisma。
 
@@ -224,7 +218,7 @@ Prisma 的 model 定義與 client 體驗，對很多開發者來說比 SQL-first
 
 只要這些基礎鷹架先存在，其實不需要從零硬背 Drizzle API，而是沿著既有範例修改。
 
-所以：
+所以我的判斷是：
 
 `這個擔心有道理，但不足以成為放棄 Drizzle 的理由。`
 
@@ -401,7 +395,9 @@ Supabase 不只是資料庫，還包含：
 
 ---
 
-## 14. 決策邏輯
+## 14. 這個決策最適合怎麼教
+
+如果要在課堂上講這個決策，最適合強調的不是「哪個工具比較潮」，而是：
 
 ### 第一個重點
 

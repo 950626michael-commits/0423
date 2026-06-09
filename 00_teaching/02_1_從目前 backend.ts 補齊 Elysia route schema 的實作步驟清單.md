@@ -1,16 +1,10 @@
----
-noteId: "d108ec723ee211f185ead73ffc185340"
-tags: []
-
----
-
 # 從目前 backend.ts 補齊 Elysia route schema 的實作步驟清單
 
 這份文件是 [02_0_API contract truth 的重要性與實作方式](</root/00_nsPrj/01_backEnd/06_elysia/00_demo01/00_teaching/02_0_API contract truth 的重要性與實作方式.md:1>) 的實作篇。
 
 建議前置閱讀：
 
-- [00_專案迭代講義.md](/root/00_nsPrj/01_backEnd/06_elysia/00_demo01/00_teaching/00_專案迭代講義.md:1)
+- [00\_專案迭代講義.md](/root/00_nsPrj/01_backEnd/06_elysia/00_demo01/00_teaching/00_專案迭代講義.md:1)
 - [02_0_API contract truth 的重要性與實作方式.md](/root/00_nsPrj/01_backEnd/06_elysia/00_demo01/00_teaching/02_0_API contract truth 的重要性與實作方式.md:1)
 
 它要處理的不是 ORM、不是資料庫，也不是 auth，而是先把目前 `backend.ts` 的 API 邊界補完整，讓 route schema 成為真正的 API contract truth。
@@ -292,6 +286,80 @@ tags: []
 
 ## 7. 實作時建議怎麼寫
 
+## 7.0 執行進度：三層架構實踐完成
+
+### ✅ 已完成項目（2025-01 session）
+
+經過逐步重構，已確認以下 API 層 schema 已正確遷移至 route-schemas.ts：
+
+| Schema 名稱              | 原位置       | 新位置           | 狀態    |
+| ------------------------ | ------------ | ---------------- | ------- |
+| `apiErrorResponseSchema` | contracts.ts | route-schemas.ts | ✅ 已移 |
+| `orderResponseSchema`    | contracts.ts | route-schemas.ts | ✅ 已移 |
+| `OrderResponse` type     | contracts.ts | route-schemas.ts | ✅ 已移 |
+| `ApiErrorResponse` type  | contracts.ts | route-schemas.ts | ✅ 已移 |
+
+**業務層 (contracts.ts) 保留**：
+
+- menuItemSchema、orderSchema、userSchema、sessionUserSchema 等業務實體
+- 移除後只剩「業務定義」，0 個 API 層定義
+
+**API 層 (route-schemas.ts) 新增**：
+
+- 所有 Request schema（13 個 body/query/params）
+- 所有 Response schema（7 個 envelope）
+- 轉換函數 toOrderResponse()
+- 錯誤回應 apiErrorResponseSchema
+
+**實施層 (backend.ts) 穩定**：
+
+- 移除所有 inline schema 定義
+- 單一入口 import：route-schemas.ts
+- 無修改需要
+
+### ✅ 驗證結果
+
+```bash
+$ bun run build:backend
+Bundled 503 modules in 126ms
+backend.js  1.84 MB  (entry point)
+✅ 無 TypeScript 錯誤
+```
+
+### ✅ 已完成項目（2026-05 session）：User / SessionUser 一次到位分層
+
+本次採用「不留過渡別名」策略，直接完成語意拆分：
+
+1. `contracts.ts` 新增 `userSchema`（完整使用者資料）
+2. `sessionUserSchema` 改由 `userSchema.pick({ id, email, name })` 派生
+3. 移除 `type User = SessionUser` 別名，避免語意污染
+4. 認證層與 API 回應維持 `SessionUser` 最小公開面（不暴露 password）
+
+這樣做的核心價值是：
+
+- **User** 負責「資料主體」與個資欄位
+- **SessionUser** 負責「已驗證身份」與 API 傳輸欄位
+
+後續若導入註冊、個資修改、角色權限，只需擴充 `userSchema`，不會衝擊既有 API session 契約。
+
+### ✅ 已完成項目（2026-05 session）：Auth 轉換邊界一致化
+
+為了避免在多個 Auth 實作內重複寫投影邏輯，本次同步完成：
+
+1. Auth 內部快取/資料模型統一使用 `User`
+2. 對外 API / 介面統一回傳 `SessionUser`
+3. `toSessionUser` 收斂為單一轉換函數（auth/user-mapper.ts）
+
+這個做法可以確保：
+
+- DemoAuth 與 PgAuth 的行為一致
+- 未來新增 OAuth / Better Auth adapter 時，仍維持同一條輸出邊界
+- 敏感欄位（如 password）不會因程式複製貼上而意外流向 API
+
+---
+
+## 7. 實作時建議怎麼寫
+
 ### 做法一：先建立共用 response schema 常數
 
 例如在 `backend.ts` 檔案前段建立：
@@ -326,6 +394,130 @@ tags: []
 
 ---
 
+## 7.1 補充：建立 route-schemas.ts 作為 API Contract 的唯一出口
+
+這一段是進入下一輪維護時很常見的重構點，特別適合在 route schema 補齊後做。
+
+### 為什麼要做
+
+核心想法是**分層清楚，減少協作者的認知負擔**：
+
+1. 前端開發者呼叫 API 時，只需看 `route-schemas.ts` 就能完整理解：
+   - 可以發送什麼欄位？（request body/query/params）
+   - 會收到什麼格式？（response envelope）
+   - 有什麼內部轉換邏輯？（toOrderResponse 等）
+
+2. backend.ts 只專注於業務流程，不應跨層直接依賴 contracts.ts 或包含 schema 宣告
+
+3. 避免「同一個 schema 定義分散在多個檔案」造成的維護困擾
+
+具體來說，當 `backend.ts` 同時包含：
+
+- 路由流程
+- middleware
+- request schema 宣告（body/query/params）
+- response schema 宣告（envelope）
+- 轉換函數（toOrderResponse）
+
+檔案會變得冗長且難以閱讀，協作者無法快速定位 API 契約所在。
+
+### 做什麼
+
+建立明確的三層分工，**所有 API 層面的定義都集中到 route-schemas.ts**：
+
+| 檔案層次                          | 職責                    | 範例                                                    |
+| --------------------------------- | ----------------------- | ------------------------------------------------------- |
+| **contracts.ts（第 1 事實）**     | 業務型別定義            | Order、OrderResponse、MenuItem                          |
+|                                   | 核心 schema             | menuItemSchema、orderResponseSchema                     |
+| **route-schemas.ts（第 2 事實）** | **Request schema**      | loginBodySchema、createMenuItemBodySchema 等            |
+|                                   | **Query/Params schema** | getOrderByIdParamsSchema、getOrderCurrentQuerySchema 等 |
+|                                   | **Response schema**     | orderResponseEnvelopeSchema、menuItemResponseSchema 等  |
+|                                   | type re-export          | export type { Order, OrderResponse }                    |
+|                                   | 業務層 ↔ API 層轉換函數 | toOrderResponse()                                       |
+|                                   | 錯誤回應 schema         | apiErrorResponseSchema                                  |
+| **backend.ts（路由層）**          | 路由行為                | app.get(), app.post()                                   |
+|                                   | **單一入口 import**     | 只從 route-schemas.ts                                   |
+|                                   | 業務流程                | 登入驗證、訂單建立等                                    |
+
+### 怎麼做
+
+建議步驟：
+
+1. **在 route-schemas.ts 中定義所有 request/response schema**：
+   - 建立清楚的分組註解區隔 Request / Response
+   - 使用清晰的命名約定：
+     - Request: `{actionVerb}{Resource}{Type}Schema`（例如 `loginBodySchema`、`updateMenuItemParamsSchema`）
+     - Response: `{Resource}{ResponseType}Schema`（例如 `orderResponseEnvelopeSchema`、`menuListResponseSchema`）
+   - 按 route 路徑分組，方便查找
+
+   範例命名：
+
+   ```ts
+   // POST /api/auth/login
+   export const loginBodySchema = z.object({ ... });
+
+   // PATCH /api/menu/:id
+   export const updateMenuItemParamsSchema = z.object({ ... });
+   export const updateMenuItemBodySchema = z.object({ ... });
+
+   // GET /api/orders/:id
+   export const getOrderByIdParamsSchema = z.object({ ... });
+   export const getOrderByIdQuerySchema = z.object({ ... });
+   ```
+
+2. **在 route-schemas.ts 內**：
+   - import Order/OrderResponse type 與業務 schema 來自 contracts.ts
+   - **定義並 export**：
+     - 所有 request schema（body、query、params）
+     - 所有 response envelope schema
+     - toOrderResponse() 函數
+     - apiErrorResponseSchema
+   - **re-export** Order、OrderResponse type
+
+3. **在 backend.ts 中**：
+   - **移除** z.object() 的任何 inline schema 定義
+   - **移除** Order/OrderResponse 的直接 import（改由 route-schemas.ts re-export）
+   - **改為** 只從 route-schemas.ts import：
+     - 所有 request schema（loginBodySchema 等）
+     - 所有 response schema（menuItemResponseSchema 等）
+     - toOrderResponse 函數
+     - apiErrorResponseSchema
+
+   重點：backend.ts 的 import 區塊應該**清晰且集中**，所有 API 相關的東西都來自 route-schemas.ts：
+
+   ```ts
+   import {
+     // Request schemas
+     loginBodySchema,
+     createMenuItemBodySchema,
+     updateMenuItemParamsSchema,
+     updateMenuItemBodySchema,
+     // Response schemas
+     loginResponseSchema,
+     menuItemResponseSchema,
+     // Utilities
+     toOrderResponse,
+   } from "./shared/route-schemas.ts";
+   ```
+
+4. **驗證**：
+   - `bun run build:backend` 無錯誤 ✅
+   - `bun dev --host` 測試主要 route：
+     - `POST /api/auth/login` 驗證 body validation
+     - `GET /api/menu` 無 schema
+     - `POST /api/orders/:id/submit` 驗證複合 params/body
+   - 檔案結構清楚，協作者能快速定位
+
+### 原則
+
+> **route-schemas.ts 是「API 層的單一事實來源」**
+>
+> - 如果協作者需要理解某條 API 的契約，只需看 route-schemas.ts 一個檔案
+> - backend.ts 是流程層，只看 route 的業務邏輯
+> - contracts.ts 是業務層，定義最底層的型別與驗證
+
+---
+
 ## 8. 這一步做完後會得到什麼
 
 完成後，完成後將得到三個直接收益：
@@ -350,11 +542,53 @@ tags: []
 
 ---
 
-## 10. 一句話總結
+## 10. 使用者管理 API 的設計概念（V9 後階段實作）
+
+> **本節只建立概念，V9 導入 Better Auth 後才實作。**
+
+### 為何現在不做
+
+V9 階段將使用 Better Auth + Google OAuth，登入/登出/session 驗證全部交由 Better Auth 處理。
+這意味著：
+
+- 不再需要 `/api/auth/login` 手動驗密碼
+- 不再需要應用層自己管理 password hash
+- 使用者的「完整資料（User）」由 Better Auth 的資料表負責儲存
+
+因此，使用者 profile 的讀取/修改 API 應在 V9 auth 穩定後才建立，避免設計浪費。
+
+### 應建立的 API 邊界
+
+| API                      | 方法    | 職責                                    | 回傳型別                       |
+| ------------------------ | ------- | --------------------------------------- | ------------------------------ |
+| `/api/users/me`          | `GET`   | 取得目前登入者的公開 profile            | `SessionUser`（不含 password） |
+| `/api/users/me`          | `PATCH` | 更新個人資料（name、birthday、address） | `SessionUser`                  |
+| `/api/users/me/password` | `PATCH` | 更換密碼（email/password 模式才需要）   | 僅 `{ ok: true }`              |
+
+> Better Auth + Google OAuth 時，`/api/users/me/password` 可省略（無本地密碼）。
+
+### 分層原則
+
+```
+Better Auth DB User（含 emailVerified / image / createdAt 等）
+       ↓ toSessionUser()
+SessionUser（id / email / name）→ API 對外回傳
+```
+
+**API 永遠只回 SessionUser，不回完整 User（不洩漏 password、敏感欄位）。**
+
+這個規則在 `shared/contracts.ts` 的分層中已體現：
+
+- `userSchema`：完整使用者資料模型（業務/資料層，不對外）
+- `sessionUserSchema`：API 回傳的最小安全投影
+
+---
+
+## 11. 一句話總結
 
 這份實作清單的目的，不是先改功能，而是先把目前 `backend.ts` 的每一條主要 route 補成真正可驗證、可推導、可輸出的 API contract。
 
 下一份建議接著閱讀：
 
-- [02_2_導入 OpenAPI ／ Swagger 輸出.md](/root/00_nsPrj/01_backEnd/06_elysia/00_demo01/00_teaching/02_2_導入 OpenAPI ／ Swagger 輸出.md:1)
-- [03_為什麼這個專案選 Drizzle + Neon.md](/root/00_nsPrj/01_backEnd/06_elysia/00_demo01/00_teaching/03_為什麼這個專案選 Drizzle + Neon.md:1)
+- [02_2_導入 OpenAPI ／ Swagger 輸出.md](/root/00*nsPrj/01_backEnd/06_elysia/00_demo01/00_teaching/02_2*導入 OpenAPI ／ Swagger 輸出.md:1)
+- [03_為什麼這個專案選 Drizzle + Neon.md](/root/00*nsPrj/01_backEnd/06_elysia/00_demo01/00_teaching/03*為什麼這個專案選 Drizzle + Neon.md:1)

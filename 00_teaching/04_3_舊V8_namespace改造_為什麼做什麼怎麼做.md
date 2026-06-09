@@ -1,107 +1,283 @@
----
-noteId: "d1093a943ee211f185ead73ffc185340"
-tags: []
+# PostgreSQL Namespace（Schema）隔離：為什麼、做什麼、怎麼做
+
+> **本文適用範圍（雙軌）**
+>
+> | 脈絡                        | 問題                                                               | 解法                                      |
+> | --------------------------- | ------------------------------------------------------------------ | ----------------------------------------- |
+> | 歷史參考：舊 V8 → 舊 V9     | 舊 V9 (Better Auth) 改動了 DB，舊 V8 壞掉                          | 用 `v8_legacy` namespace 讓舊 V8 獨立存活 |
+> | **主教學線：新 V8 → 新 V9** | **新 V9 (Better Auth) 會在同一個 DB 新增資料表，可能與新 V8 衝突** | **用 namespace 把應用表與 Auth 表分開**   |
+>
+> 兩個情境，同一個解法。理解「為什麼需要 namespace」，就能預見並提前處理版本升級時的衝突。
 
 ---
 
-# 舊 V8 namespace 改造：為什麼、做什麼、怎麼做
+## 0. 先理解：PostgreSQL 的 Schema（Namespace）是什麼
 
-> 目的：讓「舊 V8（Drizzle + Neon + userId:number）」在資料庫已被舊 V9 改動後，仍能獨立運作。
+### 概念
+
+PostgreSQL 的 **schema** 是資料庫內部的命名空間（namespace）。  
+一個資料庫可以有多個 schema，每個 schema 裡可以有自己獨立的資料表、view、函式，彼此不互相干擾。
+
+```
+Neon 資料庫（同一個 DB）
+├── public/              ← 預設 schema（namespace）
+│   ├── users
+│   ├── orders
+│   └── menu_items
+├── app/                 ← 自訂 schema（namespace）
+│   ├── users
+│   ├── orders
+│   └── menu_items
+└── auth/                ← Better Auth 專用 schema（namespace）
+    ├── user
+    ├── session
+    ├── account
+    └── verification
+```
+
+> **重點：** `public.users` 和 `app.users` 是兩張完全不同的表，即使名字相同也不衝突。
+
+### 與其他概念對比
+
+| 概念                | 類比             |
+| ------------------- | ---------------- |
+| PostgreSQL database | 整棟大樓         |
+| PostgreSQL schema   | 大樓裡的各個房間 |
+| 資料表（table）     | 房間裡的傢俱     |
+
+不指定 schema 時，PostgreSQL 預設使用 `public`。所以大多數初學者的所有表都在 `public` 裡，這正是版本衝突的根源。
 
 ---
 
 ## 1. 為什麼要做（Why）
 
-當前現況是：
+### 問題根源：多個版本共用同一個 `public` schema
 
-1. `main` 的程式邏輯仍偏舊 V8。
-2. 但資料庫表已被舊 V9/Better Auth 部分改動。
-3. 舊 V8 預期的表結構與目前 DB 不一致，導致舊 V8 直接連線時容易壞掉。
+當你在新 V8 建好下列資料表：
 
-問題本質不是「舊 V8 程式寫錯」，而是「程式版本與資料庫版本不同步」。
+```sql
+-- public schema（預設）
+public.users       -- 應用的使用者
+public.orders      -- 訂單
+public.menu_items  -- 菜單
+```
 
-因此需要一個隔離方案，讓舊 V8 有自己的資料空間，不干擾 V9 線。
+接著新 V9 導入 **Better Auth**，Better Auth 在初始化時會自動在資料庫建立自己所需的資料表：
+
+```sql
+-- Better Auth 預設也建在 public schema
+public.user           -- Better Auth 的使用者表（名稱與你的 users 接近）
+public.session        -- Better Auth 的 session 管理
+public.account        -- OAuth 綁定帳號
+public.verification   -- 驗證 token
+```
+
+這時會產生兩種問題：
+
+**問題 A：命名衝突**  
+Better Auth 的 `user` 表和你的 `users` 表只差一個 `s`，但語意完全不同，容易混淆查詢。
+
+**問題 B：職責混用**  
+應用資料（訂單、菜單）和身分驗證資料（session、OAuth）全部堆在 `public`，難以分辨哪些表屬於哪個系統，也讓未來的 migration 充滿風險。
+
+**問題 C：版本升級破壞舊版**（歷史脈絡：舊 V8 → 舊 V9）  
+舊 V9 改動 DB 結構後，舊 V8 依賴的表被破壞，導致舊 V8 無法正常啟動。
+
+> **一句話總結：** 沒有 namespace 隔離，不同版本/不同系統的資料表全部擠在 `public`，升級一個版本就可能破壞另一個版本。
 
 ---
 
-## 2. 做了什麼（What）
+## 2. 做什麼（What）
 
-這次採用 PostgreSQL schema（命名空間）隔離，核心做法如下：
+### 核心策略：用 PostgreSQL schema 做命名空間隔離
 
-1. 為舊 V8 建立專用 namespace（預設 `v8_legacy`）。
-2. 在該 namespace 建立舊 V8 需要的表：
-   - `users`
-   - `menu_items`
-   - `orders`
-   - `order_items`
-3. 舊 V8 backend 改走獨立入口與獨立 store：
-   - `backend.v8.ts`
-   - `legacy/v8/store/PgStoreV8.ts`
-4. 舊 V8 的資料契約維持 `userId:number`，避免混入新 V7/V9 的 string 身分策略。
-5. 補上初始化腳本，確保任何環境都可快速建好舊 V8 表。
+把不同責任的資料表放進不同的 schema：
 
-一句話：用「DB namespace 隔離 + 程式入口隔離」來恢復舊 V8 可運作性。
+```
+Neon 資料庫
+├── public/（預設，盡量不放業務表）
+├── app/（或 v8_legacy/）  ← 應用自己的業務表
+│   ├── users
+│   ├── orders
+│   ├── menu_items
+│   └── order_items
+└── auth/（可選）           ← Better Auth 專用
+    ├── user
+    ├── session
+    ├── account
+    └── verification
+```
+
+### 對應到兩個教學脈絡
+
+| 脈絡                    | 應用表放在           | Auth 表放在                  | 用途                       |
+| ----------------------- | -------------------- | ---------------------------- | -------------------------- |
+| 歷史：舊 V8 隔離        | `v8_legacy`          | `public`（Better Auth 預設） | 讓舊 V8 恢復可運行         |
+| **主線：新 V8 → 新 V9** | `app`（或 `public`） | `auth`（Better Auth 指定）   | 提前隔離，避免未來升級衝突 |
+
+### Drizzle 中如何指定 schema
+
+在 Drizzle 定義資料表時，只需在 `pgTable` 第一個參數前加上 `pgSchema`：
+
+```typescript
+// 定義 namespace
+import { pgSchema } from "drizzle-orm/pg-core";
+const appSchema = pgSchema("app");
+
+// 在 namespace 下建立表
+export const users = appSchema.table("users", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull(),
+  // ...
+});
+```
+
+Better Auth 也提供設定，可以指定它建表的目標 schema：
+
+```typescript
+// Better Auth 設定（新 V9）
+const auth = betterAuth({
+  database: { ... },
+  // 指定 Better Auth 把 auth 相關表建在 auth schema
+  databaseSchema: "auth",
+});
+```
 
 ---
 
 ## 3. 怎麼做（How）
 
-### A. 建立舊 V8 專用表
+### 情境 A：歷史參考 — 舊 V8 從舊 V9 的破壞中恢復
 
-使用初始化腳本：
+#### A-1. 建立舊 V8 專用表
+
+使用初始化腳本，在 `v8_legacy` namespace 下建立資料表：
 
 ```bash
 bun run v8:db:setup
 ```
 
-它會在 `V8_DB_SCHEMA`（預設 `v8_legacy`）下建立必要資料表與索引。
+腳本對應：`scripts/setup-v8-legacy-db.ts`
 
-### B. 啟動舊 V8 入口
+#### A-2. 啟動舊 V8 入口
 
 ```bash
 PORT=3010 V8_DB_SCHEMA=v8_legacy bun run dev:v8
 ```
 
-說明：
+- `PORT=3010`：避免與主線 3000 衝突
+- `V8_DB_SCHEMA=v8_legacy`：指定舊 V8 使用哪個 namespace
 
-1. 使用 3010，避免與主線 3000 互相干擾。
-2. 透過 `V8_DB_SCHEMA` 指定舊 V8 專用命名空間。
-
-### C. 最小 smoke test
+#### A-3. 最小 smoke test
 
 ```bash
 curl -s http://localhost:3010/health
-curl -s -X POST http://localhost:3010/api/auth/login -H "Content-Type: application/json" -d '{"email":"demo@example.com","password":"1234"}'
+curl -s -X POST http://localhost:3010/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"demo@example.com","password":"1234"}'
 curl -s "http://localhost:3010/api/menu"
-curl -s -X POST http://localhost:3010/api/orders -H "Content-Type: application/json" -d '{"userId":1}'
-curl -s "http://localhost:3010/api/orders/current?userId=1"
+```
+
+---
+
+### 情境 B：主教學線 — 新 V8 → 新 V9 的正確做法
+
+#### B-1. 新 V8 建表時就指定 schema（提前規劃）
+
+在 `legacy/v8/db/schema.ts`（或主線的 Drizzle schema 檔）：
+
+```typescript
+import { pgSchema, text, serial } from "drizzle-orm/pg-core";
+
+// 應用表放在 "app" namespace
+const appSchema = pgSchema("app");
+
+export const users = appSchema.table("users", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  name: text("name").notNull(),
+});
+
+export const orders = appSchema.table("orders", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  // ...
+});
+```
+
+#### B-2. drizzle.config.ts 指定 schema
+
+```typescript
+// drizzle.config.ts
+export default defineConfig({
+  schema: "./db/schema.ts",
+  out: "./drizzle",
+  dialect: "postgresql",
+  dbCredentials: { url: process.env.DATABASE_URL! },
+  // 確保 migration 只操作 app schema
+  schemaFilter: ["app"],
+});
+```
+
+#### B-3. 新 V9 導入 Better Auth 時，指定 auth schema
+
+```typescript
+// auth/index.ts（新 V9）
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+
+export const auth = betterAuth({
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    // Better Auth 的表建在 auth namespace
+    schema: { usersTable: authSchema.table(...) },
+  }),
+});
+```
+
+#### B-4. 環境變數管理 namespace 名稱
+
+```bash
+# .env
+DATABASE_URL=postgresql://...
+APP_DB_SCHEMA=app      # 應用業務表的 namespace
+AUTH_DB_SCHEMA=auth    # Better Auth 的 namespace
 ```
 
 ---
 
 ## 4. 設計決策重點
 
-1. 不回滾現有 V9 DB 變更
+### 為什麼不全部放 `public`？
 
-- 以隔離方式兼容，而不是破壞目前主線資料。
+`public` 是 PostgreSQL 的預設 schema，所有工具（Better Auth、Drizzle、直接 psql）預設都寫 `public`。  
+當多個系統共用同一個 DB，`public` 很快就會變成「萬物混雜的垃圾桶」，命名衝突、職責不清、升級破壞——都是後果。
 
-2. 不把舊 V8 強行改成 string userId
+### 為什麼不用多個資料庫？
 
-- 舊 V8 保持教學對照價值（number 身分模型）。
+Neon free tier 只有一個資料庫，無法建多個 DB。  
+即使可以建，schema 隔離在同一個 DB 內就能達成目的，不需要額外的連線管理成本。
 
-3. 把相容成本留在邊界
+### 為什麼舊 V8 維持 `userId:number`，不改成 string？
 
-- 用獨立 backend/store/schema 吸收差異，避免污染新主線。
+舊 V8 保持原始設計，作為教學對照：
+
+- 新 V7 以後改用 `userId:string`（補零 ID，如 `"0001"`）
+- 兩者並列，學生可以清楚看到「身分識別型別的演進」
 
 ---
 
-## 5. 教學用途與收益
+## 5. 教學收益總結
 
-這份改造非常適合教學示範三件事：
+這份改造適合教學示範三件事：
 
-1. 「版本與資料庫不同步」時，如何用最小破壞恢復可運行。
-2. PostgreSQL namespace 在多版本並行中的實務價值。
-3. 為什麼架構分層（入口、store、contract）能降低升級風險。
+1. **版本與資料庫不同步時**，如何用最小破壞恢復可運行狀態。
+2. **PostgreSQL namespace 的通用價值**：不論是多版本並行、還是引入第三方 Auth，都適用同一套隔離思路。
+3. **為什麼架構分層**（入口、store、contract、schema）能大幅降低升級風險：改一個版本，不會炸掉另一個版本。
+
+> **跨版本通用原則：**  
+> 只要「同一個 Neon DB」被「多個版本或多個系統」共用，就應該考慮 PostgreSQL namespace 隔離。  
+> 新 V8 → 新 V9 面對的是同一個問題，用同一個解法。
 
 ---
 
@@ -114,29 +290,3 @@ curl -s "http://localhost:3010/api/orders/current?userId=1"
 建議口訣：
 
 `先隔離（schema/port）再驗證（smoke test），最後才談邏輯修補。`
-
----
-
-## 7. Render 佈署紀錄（本次決策）
-
-這次教學決策是：若要上線舊 V8 namespace 改造版，Render 啟動入口必須指向 `backend.v8.ts`。
-
-### 為什麼
-
-1. 專案預設 `start` 仍會跑 `backend.ts`。
-2. 舊 V8 改造邏輯在 `backend.v8.ts`，不是在 `backend.ts`。
-3. 若入口沒切換，部署雖成功，但實際跑的不是目標版本。
-
-### 做什麼
-
-1. Build Command：`bun install && bun run build`
-2. Start Command：`bun backend.v8.ts`
-3. 建議改成更保險版本：`bun run v8:db:setup && bun backend.v8.ts`
-4. 環境變數維持既有 `DATABASE_URL`，並建議明確補 `V8_DB_SCHEMA=v8_legacy`
-
-### 怎麼做（操作順序）
-
-1. 在 Render 更新 Start Command。
-2. 確認 `DATABASE_URL` 存在且可連線。
-3. 設定 `V8_DB_SCHEMA=v8_legacy`（建議）。
-4. 重新部署後先打 `/health`，再測 `login/menu/orders`。
