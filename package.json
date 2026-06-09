@@ -11,7 +11,7 @@
     "dev:backend": "bun --watch backend.ts",
     "dev:frontend": "cd frontend && bun run dev",
     "build:frontend": "cd frontend && bun run build",
-    "build:backend": "bun build ./backend.ts --outdir ./dist --target=bun --external better-auth --external '@better-auth/*'",
+    "build:backend": "bun build ./backend.ts --outdir ./dist --target=bun --external better-auth --external '@better-auth/*' && cp -r public dist/",
     "build": "bun run build:frontend && bun run build:backend",
     "start": "bun dist/backend.js",
     "preview:frontend": "cd frontend && bun run preview",
