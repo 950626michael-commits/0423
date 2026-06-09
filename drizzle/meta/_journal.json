@@ -36,6 +36,13 @@
       "when": 1781017000000,
       "tag": "0004_orders_auth_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1781018000000,
+      "tag": "0005_orders_auth_fk_scoped",
+      "breakpoints": true
     }
   ]
 }

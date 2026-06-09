@@ -24,6 +24,7 @@ if (!DATABASE_URL) {
 
 const DRIZZLE_DIR = join(import.meta.dir, "..", "drizzle");
 const JOURNAL_PATH = join(DRIZZLE_DIR, "meta", "_journal.json");
+const PG_SCHEMA = process.env.PG_SCHEMA ?? "public";
 
 interface JournalEntry {
   idx: number;
@@ -56,10 +57,9 @@ async function main() {
     `);
 
     // 建立應用 schema（若不存在）
-    const pgSchema = process.env.PG_SCHEMA ?? "public";
-    if (pgSchema !== "public") {
-      console.log(`[setup] Creating schema "${pgSchema}" if not exists...`);
-      await client.query(`CREATE SCHEMA IF NOT EXISTS "${pgSchema}"`);
+    if (PG_SCHEMA !== "public") {
+      console.log(`[setup] Creating schema "${PG_SCHEMA}" if not exists...`);
+      await client.query(`CREATE SCHEMA IF NOT EXISTS "${PG_SCHEMA}"`);
     }
 
     const journalText = await readFile(JOURNAL_PATH, "utf-8");
@@ -69,7 +69,10 @@ async function main() {
       const sqlPath = join(DRIZZLE_DIR, `${entry.tag}.sql`);
 
       // 逐步執行每個 statement（以 --> statement-breakpoint 分割）
-      const sqlText = await readFile(sqlPath, "utf-8");
+      const sqlText = (await readFile(sqlPath, "utf-8")).replaceAll(
+        '"bf_v9"',
+        `"${PG_SCHEMA}"`,
+      );
       const statements = sqlText
         .split("--> statement-breakpoint")
         .map((s) => s.trim())
@@ -95,11 +98,13 @@ async function main() {
           if (
             msg.includes("already exists") ||
             msg.includes("duplicate_table") ||
-            msg.includes("does not exist")
+            msg.includes("does not exist") ||
+            (stmt.includes("orders_user_id_users_id_fk") &&
+              msg.includes("violates foreign key constraint"))
           ) {
             await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
             await client.query(`RELEASE SAVEPOINT ${savepointName}`);
-            console.warn(`  [skip] already exists: ${msg.split("\n")[0]}`);
+            console.warn(`  [skip] ${msg.split("\n")[0]}`);
           } else {
             console.error(`  [error] ${msg}`);
             await client.query("ROLLBACK");
