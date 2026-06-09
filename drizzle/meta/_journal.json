@@ -29,6 +29,13 @@
       "when": 1781016000000,
       "tag": "0003_rbac",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781017000000,
+      "tag": "0004_orders_auth_fk",
+      "breakpoints": true
     }
   ]
 }
