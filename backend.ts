@@ -889,8 +889,10 @@ if (hasPublicAssets) {
       });
     }
 
-    // 使用 process.cwd() 確保在任何環境中都能找到 public 目錄
-    const publicDir = `${process.cwd()}/public`;
+    // 從Bun.main獲取執行檔案位置，然後定位public目錄
+    const execDir = Bun.main ? new URL(Bun.main).pathname.replace(/\/[^/]+$/, "") : process.cwd();
+    const baseDir = execDir.includes("/dist") ? execDir.replace(/\/dist$/, "") : execDir;
+    const publicDir = `${baseDir}/public`;
     const staticFilePath = `${publicDir}${pathname}`;
     const staticFile = Bun.file(staticFilePath);
     if (pathname !== "/" && (await staticFile.exists())) {
