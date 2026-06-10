@@ -39,6 +39,7 @@ export interface Store {
   getCurrentOrderByUserId(userId: string): Order | undefined;
   getOrderHistoryByUserId(userId: string): ReadonlyArray<Order>;
   getOrderById(orderId: number): Order | undefined;
+  deleteOrder(orderId: number): Promise<Order | null>;
   createOrder(input: { userId: string }): Promise<Order>;
   updateOrderItem(
     orderId: number,

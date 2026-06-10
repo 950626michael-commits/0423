@@ -10,6 +10,117 @@ import type {
 } from "../../shared/contracts.ts";
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+type Language = "zh" | "en";
+
+const translations = {
+  zh: {
+    languageButton: "English",
+    open: "營業中",
+    closed: "已打烊",
+    businessHours: "營業時間：早上 5:00 到下午 3:00",
+    closesAt: "今天下午 3:00 關門",
+    opensAt: "明天早上 5:00 開門",
+    brand: "廖世宇的早餐店",
+    loginRequiredTitle: "請先登入",
+    loginRequiredBody: "登入後可以點餐、查看訂單，並依角色使用後台功能。",
+    login: "Google 登入",
+    loggingIn: "登入中...",
+    logout: "登出",
+    adminPanel: "管理後台",
+    refreshOrders: "刷新訂單",
+    refreshing: "刷新中...",
+    deleteOrder: "刪除",
+    deleting: "刪除中...",
+    orderDeleted: "訂單已刪除。",
+    orderDeleteFailed: "刪除訂單失敗",
+    noOrders: "目前沒有訂單。",
+    roleRequestTitle: "職位申請",
+    roleRequestHelp: "請先填寫申請目的，管理者審核時會看到這段說明。",
+    purposeLabel: "申請目的",
+    purposePlaceholder: "例如：想協助點餐、出餐，或說明離職原因",
+    applyStaff: "申請櫃台",
+    applyChef: "申請廚師",
+    resign: "提出離職申請",
+    submitting: "送出中...",
+    cartTitle: "我的購物車",
+    openCart: "查看購物車",
+    items: "項",
+    comboTitle: "套餐組合",
+    comboHelp: "固定一份餐點或蛋餅，搭配一杯飲料，套餐現折 10 元。",
+    comboFood: "餐點 / 蛋餅",
+    comboDrink: "飲料",
+    noComboFood: "沒有可選餐點",
+    noComboDrink: "沒有可選飲料",
+    addCombo: "加入套餐",
+    adding: "加入中...",
+    searchLabel: "搜尋餐點",
+    managerPick: "店長特選",
+    clear: "清除",
+  },
+  en: {
+    languageButton: "中文",
+    open: "Open",
+    closed: "Closed",
+    businessHours: "Hours: 5:00 AM to 3:00 PM",
+    closesAt: "Closes today at 3:00 PM",
+    opensAt: "Opens tomorrow at 5:00 AM",
+    brand: "Liao Shiyu Breakfast Shop",
+    loginRequiredTitle: "Please sign in",
+    loginRequiredBody:
+      "Sign in to order food, view orders, and use role-based admin tools.",
+    login: "Sign in with Google",
+    loggingIn: "Signing in...",
+    logout: "Sign out",
+    adminPanel: "Admin Panel",
+    refreshOrders: "Refresh orders",
+    refreshing: "Refreshing...",
+    deleteOrder: "Delete",
+    deleting: "Deleting...",
+    orderDeleted: "Order deleted.",
+    orderDeleteFailed: "Failed to delete order",
+    noOrders: "No orders yet.",
+    roleRequestTitle: "Position Request",
+    roleRequestHelp:
+      "Write your purpose first. Managers will see this note while reviewing.",
+    purposeLabel: "Purpose",
+    purposePlaceholder:
+      "Example: I want to help with ordering, cooking, or explain resignation.",
+    applyStaff: "Apply for Staff",
+    applyChef: "Apply for Chef",
+    resign: "Submit resignation",
+    submitting: "Submitting...",
+    cartTitle: "My Cart",
+    openCart: "Open cart",
+    items: "items",
+    comboTitle: "Combo Set",
+    comboHelp: "One meal or egg pancake with one drink. Combo saves $10.",
+    comboFood: "Meal / Egg pancake",
+    comboDrink: "Drink",
+    noComboFood: "No meal options",
+    noComboDrink: "No drink options",
+    addCombo: "Add combo",
+    adding: "Adding...",
+    searchLabel: "Search menu",
+    managerPick: "Manager Pick",
+    clear: "Clear",
+  },
+} satisfies Record<Language, Record<string, string>>;
+
+function getBusinessStatus(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Taipei",
+  }).formatToParts(now);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  const minutes = hour * 60 + minute;
+
+  return {
+    isOpen: minutes >= 5 * 60 && minutes < 15 * 60,
+  };
+}
 
 function buildApiUrl(path: string) {
   return `${apiBaseUrl}${path}`;
@@ -110,6 +221,10 @@ function isMainComboItem(item: MenuItem) {
 }
 
 export default function App() {
+  const [language, setLanguage] = useState<Language>("zh");
+  const [businessStatus, setBusinessStatus] = useState(() =>
+    getBusinessStatus(),
+  );
   const [user, setUser] = useState<SessionUser | null>(null);
   const [authError, setAuthError] = useState("");
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
@@ -149,11 +264,15 @@ export default function App() {
   const [adminUsers, setAdminUsers] = useState<SessionUser[]>([]);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [deletingOrderId, setDeletingOrderId] = useState<number | null>(null);
+
+  const t = translations[language];
 
   const hasRole = (role: Role) => user?.roles.includes(role) ?? false;
   const hasAnyRole = (roles: Role[]) => roles.some((role) => hasRole(role));
   const canViewOperations = hasAnyRole(["staff", "chef", "owner", "admin"]);
   const canReviewRoles = hasRole("admin");
+  const canDeleteOrders = hasAnyRole(["owner", "admin"]);
 
   const filteredItems = useMemo(() => {
     const keyword = searchQuery.trim().toLowerCase();
@@ -221,6 +340,14 @@ export default function App() {
       setComboDrinkId(comboDrinkOptions[0].id);
     }
   }, [comboDrinkId, comboDrinkOptions]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setBusinessStatus(getBusinessStatus());
+    }, 60_000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -334,6 +461,24 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "讀取營運訂單失敗");
     } finally {
       setOperationsLoading(false);
+    }
+  }
+
+  async function deleteOperationOrder(orderId: number) {
+    setDeletingOrderId(orderId);
+    setNotice("");
+
+    try {
+      await readApi<ApiDataResponse<Order>>(`/api/orders/${orderId}`, {
+        method: "DELETE",
+      });
+
+      await Promise.all([loadOperationOrders(), refreshUserOrders()]);
+      setNotice(t.orderDeleted);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : t.orderDeleteFailed);
+    } finally {
+      setDeletingOrderId(null);
     }
   }
 
@@ -628,10 +773,16 @@ export default function App() {
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm font-semibold text-primary">Breakfast RBAC</p>
-            <h1 className="text-2xl font-black">廖世宇的早餐店</h1>
+            <h1 className="text-2xl font-black">{t.brand}</h1>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              className="btn btn-sm btn-outline"
+              onClick={() => setLanguage((current) => (current === "zh" ? "en" : "zh"))}
+            >
+              {t.languageButton}
+            </button>
             {user ? (
               <>
                 <span className="badge badge-outline">{user.name}</span>
@@ -641,7 +792,7 @@ export default function App() {
                   </span>
                 ))}
                 <button className="btn btn-sm" onClick={() => void handleLogout()}>
-                  登出
+                  {t.logout}
                 </button>
               </>
             ) : (
@@ -650,7 +801,7 @@ export default function App() {
                 onClick={() => void handleGoogleSignIn()}
                 disabled={isGoogleSigningIn}
               >
-                {isGoogleSigningIn ? "登入中..." : "Google 登入"}
+                {isGoogleSigningIn ? t.loggingIn : t.login}
               </button>
             )}
           </div>
@@ -658,6 +809,22 @@ export default function App() {
       </header>
 
       <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6">
+        <section
+          className={`alert ${
+            businessStatus.isOpen ? "alert-success" : "alert-warning"
+          }`}
+        >
+          <div>
+            <h2 className="font-bold">
+              {businessStatus.isOpen ? t.open : t.closed}
+            </h2>
+            <p className="text-sm">
+              {t.businessHours} ·{" "}
+              {businessStatus.isOpen ? t.closesAt : t.opensAt}
+            </p>
+          </div>
+        </section>
+
         {pageError ? (
           <div className="alert alert-error">
             <span>{pageError}</span>
@@ -679,6 +846,7 @@ export default function App() {
         {user ? (
           <section className="grid gap-4 md:grid-cols-[1fr_1fr]">
             <RoleRequestPanel
+              labels={t}
               user={user}
               requestingRole={requestingRole}
               message={roleRequestMessage}
@@ -686,6 +854,7 @@ export default function App() {
             />
 
             <CartSummary
+              labels={t}
               cartItemCount={cartItemCount}
               cartTotal={cartTotal}
               onOpenCart={() => setIsCartOpen(true)}
@@ -693,19 +862,20 @@ export default function App() {
           </section>
         ) : (
           <section className="rounded-lg border border-base-300 bg-base-100 p-6 shadow-sm">
-            <h2 className="text-xl font-bold">先登入，再開始點餐</h2>
-            <p className="mt-2 text-sm opacity-70">
-              登入後可以建立自己的訂單，也可以依照角色看到對應的管理功能。
-            </p>
+            <h2 className="text-xl font-bold">{t.loginRequiredTitle}</h2>
+            <p className="mt-2 text-sm opacity-70">{t.loginRequiredBody}</p>
           </section>
         )}
 
         {user && canViewOperations ? (
           <AdminPanel
+            labels={t}
             currentUserId={user.id}
+            canDeleteOrders={canDeleteOrders}
             canReviewRoles={canReviewRoles}
             operationOrders={operationOrders}
             operationsLoading={operationsLoading}
+            deletingOrderId={deletingOrderId}
             roleRequests={roleRequests}
             roleRequestsLoading={roleRequestsLoading}
             reviewingRoleRequestId={reviewingRoleRequestId}
@@ -714,6 +884,7 @@ export default function App() {
             adminUsersLoading={adminUsersLoading}
             updatingUserId={updatingUserId}
             onReloadOrders={loadOperationOrders}
+            onDeleteOrder={deleteOperationOrder}
             onReloadRoleRequests={loadRoleRequests}
             onClearRoleRequests={clearRoleRequests}
             onReloadUsers={loadAdminUsers}
@@ -723,6 +894,7 @@ export default function App() {
         ) : null}
 
         <ComboBuilder
+          labels={t}
           foodOptions={comboFoodOptions}
           drinkOptions={comboDrinkOptions}
           foodId={comboFoodId}
@@ -734,6 +906,7 @@ export default function App() {
         />
 
         <MenuSearch
+          labels={t}
           query={searchQuery}
           totalCount={items.length}
           resultCount={filteredItems.length}
@@ -970,11 +1143,13 @@ function ComboBuilder({
 }
 
 function MenuSearch({
+  labels,
   query,
   totalCount,
   resultCount,
   onChange,
 }: {
+  labels: (typeof translations)[Language];
   query: string;
   totalCount: number;
   resultCount: number;
@@ -985,12 +1160,12 @@ function MenuSearch({
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <label className="form-control w-full md:max-w-xl">
           <div className="label">
-            <span className="label-text font-bold">搜尋餐點</span>
+            <span className="label-text font-bold">{labels.searchLabel}</span>
           </div>
           <input
             className="input input-bordered"
             value={query}
-            placeholder="輸入餐點名稱、分類或描述，例如：蛋餅、奶茶、咖啡"
+            placeholder={labels.searchLabel}
             onChange={(event) => onChange(event.target.value)}
           />
         </label>
@@ -1001,14 +1176,14 @@ function MenuSearch({
             target="_blank"
             rel="noreferrer"
           >
-            {"\u5e97\u9577\u7279\u9078"}
+            {labels.managerPick}
           </a>
           <span className="badge badge-outline">
-            {resultCount} / {totalCount} 項
+            {resultCount} / {totalCount} {labels.items}
           </span>
           {query ? (
             <button className="btn btn-sm btn-ghost" onClick={() => onChange("")}>
-              清除
+              {labels.clear}
             </button>
           ) : null}
         </div>
@@ -1018,10 +1193,13 @@ function MenuSearch({
 }
 
 function AdminPanel({
+  labels,
   currentUserId,
+  canDeleteOrders,
   canReviewRoles,
   operationOrders,
   operationsLoading,
+  deletingOrderId,
   roleRequests,
   roleRequestsLoading,
   reviewingRoleRequestId,
@@ -1030,16 +1208,20 @@ function AdminPanel({
   adminUsersLoading,
   updatingUserId,
   onReloadOrders,
+  onDeleteOrder,
   onReloadRoleRequests,
   onClearRoleRequests,
   onReloadUsers,
   onReviewRoleRequest,
   onUpdateUserRoles,
 }: {
+  labels: (typeof translations)[Language];
   currentUserId: string;
+  canDeleteOrders: boolean;
   canReviewRoles: boolean;
   operationOrders: Order[];
   operationsLoading: boolean;
+  deletingOrderId: number | null;
   roleRequests: RoleRequest[];
   roleRequestsLoading: boolean;
   reviewingRoleRequestId: number | null;
@@ -1048,6 +1230,7 @@ function AdminPanel({
   adminUsersLoading: boolean;
   updatingUserId: string | null;
   onReloadOrders: () => Promise<void>;
+  onDeleteOrder: (orderId: number) => Promise<void>;
   onReloadRoleRequests: () => Promise<void>;
   onClearRoleRequests: () => Promise<void>;
   onReloadUsers: () => Promise<void>;

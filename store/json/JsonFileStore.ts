@@ -320,6 +320,18 @@ export class JsonFileStore implements Store {
     return this.orders.find((order) => order.id === orderId);
   }
 
+  async deleteOrder(orderId: number): Promise<Order | null> {
+    const targetIndex = this.orders.findIndex((order) => order.id === orderId);
+    if (targetIndex === -1) {
+      return null;
+    }
+
+    const [removedOrder] = this.orders.splice(targetIndex, 1);
+    await this.persist();
+
+    return removedOrder ?? null;
+  }
+
   async createOrder(input: { userId: string }): Promise<Order> {
     const existingOrder = this.getCurrentOrderByUserId(input.userId);
     if (existingOrder) {

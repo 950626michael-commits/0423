@@ -440,6 +440,38 @@ app.get(
 );
 
 // 更新訂單項目
+app.delete(
+  "/api/orders/:id",
+  async ({ params, request, set }) => {
+    const user = await requireUser(request);
+    requireAnyRole(user, ["owner", "admin"]);
+
+    const orderId = parseInt(params.id, 10);
+    const deletedOrder = await store.deleteOrder(orderId);
+
+    if (!deletedOrder) {
+      set.status = 404;
+      return { error: "Order not found" };
+    }
+
+    return { data: toOrderResponse(deletedOrder) };
+  },
+  {
+    params: getOrderByIdParamsSchema,
+    detail: {
+      tags: ["orders"],
+      summary: "Delete order",
+      description: "Delete an order from the admin operations panel.",
+    },
+    response: {
+      200: orderResponseEnvelopeSchema,
+      401: apiErrorResponseSchema,
+      403: apiErrorResponseSchema,
+      404: apiErrorResponseSchema,
+    },
+  },
+);
+
 app.patch(
   "/api/orders/:id",
   async ({ params, body, request, set }) => {

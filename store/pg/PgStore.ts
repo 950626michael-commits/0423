@@ -216,6 +216,18 @@ export class PgStore implements Store {
     return this.orders.find((o) => o.id === orderId);
   }
 
+  async deleteOrder(orderId: number): Promise<Order | null> {
+    const order = this.orders.find((o) => o.id === orderId);
+    if (!order) return null;
+
+    await db.delete(ordersTable).where(eq(ordersTable.id, orderId));
+
+    const idx = this.orders.findIndex((o) => o.id === orderId);
+    if (idx !== -1) this.orders.splice(idx, 1);
+
+    return order;
+  }
+
   async createOrder(input: { userId: string }): Promise<Order> {
     const existingOrder = this.getCurrentOrderByUserId(input.userId);
     if (existingOrder) {
