@@ -1,0 +1,69 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1777142977745,
+      "tag": "0000_strange_runaways",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777458246949,
+      "tag": "0001_luxuriant_toad",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777478305777,
+      "tag": "0002_unique_outlaw_kid",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781016000000,
+      "tag": "0003_rbac",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781017000000,
+      "tag": "0004_orders_auth_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1781018000000,
+      "tag": "0005_orders_auth_fk_scoped",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781019000000,
+      "tag": "0006_order_items_legacy_menu_item_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781020000000,
+      "tag": "0007_role_requests_upgrade",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781021000000,
+      "tag": "0008_user_roles_text_array",
+      "breakpoints": true
+    }
+  ]
+}
