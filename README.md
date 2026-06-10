@@ -6,7 +6,7 @@ tags: []
 
 # 00_demo01 - V9 (Better Auth + Google OAuth)
 
-聯大資工早餐訂餐系統 - 完整版
+廖世宇的早餐店 - 完整版
 
 ## 專案概述
 

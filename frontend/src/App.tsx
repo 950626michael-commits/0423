@@ -433,7 +433,7 @@ export default function App() {
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm font-semibold text-primary">Breakfast RBAC</p>
-            <h1 className="text-2xl font-black">早餐店點餐與權限管理</h1>
+            <h1 className="text-2xl font-black">廖世宇的早餐店</h1>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
