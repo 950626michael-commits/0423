@@ -56,12 +56,17 @@ function roleLabel(role: Role) {
   return labels[role];
 }
 
+function staffRolesFor(position: Role): Role[] {
+  return position === "customer" ? ["customer"] : ["customer", position];
+}
+
 export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [authError, setAuthError] = useState("");
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
 
   const [items, setItems] = useState<MenuItem[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [notice, setNotice] = useState("");
@@ -88,13 +93,29 @@ export default function App() {
     number | null
   >(null);
 
+  const [adminUsers, setAdminUsers] = useState<SessionUser[]>([]);
+  const [adminUsersLoading, setAdminUsersLoading] = useState(false);
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+
   const hasRole = (role: Role) => user?.roles.includes(role) ?? false;
   const hasAnyRole = (roles: Role[]) => roles.some((role) => hasRole(role));
   const canViewOperations = hasAnyRole(["staff", "chef", "owner", "admin"]);
   const canReviewRoles = hasRole("admin");
 
+  const filteredItems = useMemo(() => {
+    const keyword = searchQuery.trim().toLowerCase();
+    if (!keyword) return items;
+
+    return items.filter((item) => {
+      return [item.name, item.category, item.description]
+        .join(" ")
+        .toLowerCase()
+        .includes(keyword);
+    });
+  }, [items, searchQuery]);
+
   const grouped = useMemo(() => {
-    const groupedItems = items.reduce(
+    const groupedItems = filteredItems.reduce(
       (acc, item) => {
         const category = item.category || "其他";
         acc[category] = [...(acc[category] ?? []), item];
@@ -106,7 +127,7 @@ export default function App() {
     return Object.entries(groupedItems).sort(([a], [b]) =>
       a.localeCompare(b, "zh-Hant"),
     );
-  }, [items]);
+  }, [filteredItems]);
 
   const cartItemCount = useMemo(
     () => Object.values(cartQtyByItemId).reduce((sum, qty) => sum + qty, 0),
@@ -166,6 +187,7 @@ export default function App() {
       setHistoryOrders([]);
       setOperationOrders([]);
       setRoleRequests([]);
+      setAdminUsers([]);
       return;
     }
 
@@ -179,7 +201,7 @@ export default function App() {
 
   useEffect(() => {
     if (!user || !canReviewRoles) return;
-    void loadRoleRequests();
+    void Promise.all([loadRoleRequests(), loadAdminUsers()]);
   }, [user]);
 
   function syncCartFromOrder(order: Order) {
@@ -255,9 +277,17 @@ export default function App() {
     }
   }
 
-  async function reloadUser() {
-    const payload = await readApi<ApiDataResponse<SessionUser>>("/api/users/me");
-    setUser(payload.data);
+  async function loadAdminUsers() {
+    setAdminUsersLoading(true);
+    try {
+      const payload =
+        await readApi<ApiDataResponse<SessionUser[]>>("/api/admin/users");
+      setAdminUsers(payload.data);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "讀取員工清單失敗");
+    } finally {
+      setAdminUsersLoading(false);
+    }
   }
 
   async function ensureOrder() {
@@ -377,7 +407,7 @@ export default function App() {
         method: "POST",
         body: JSON.stringify({
           requestedRole: role,
-          reason: `我想申請 ${roleLabel(role)} 權限，以協助早餐店營運。`,
+          reason: `我想申請 ${roleLabel(role)} 權限，以協助廖世宇的早餐店營運。`,
         }),
       });
 
@@ -410,12 +440,34 @@ export default function App() {
         },
       );
 
-      await loadRoleRequests();
+      await Promise.all([loadRoleRequests(), loadAdminUsers()]);
       setNotice(status === "approved" ? "已核准角色申請。" : "已拒絕角色申請。");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "審核角色申請失敗");
     } finally {
       setReviewingRoleRequestId(null);
+    }
+  }
+
+  async function updateUserRoles(targetUserId: string, roles: Role[]) {
+    setUpdatingUserId(targetUserId);
+    setNotice("");
+
+    try {
+      await readApi<ApiDataResponse<SessionUser>>(
+        `/api/admin/users/${targetUserId}/roles`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ roles }),
+        },
+      );
+
+      await loadAdminUsers();
+      setNotice("員工職位已更新。");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "更新員工職位失敗");
+    } finally {
+      setUpdatingUserId(null);
     }
   }
 
@@ -507,17 +559,30 @@ export default function App() {
 
         {user && canViewOperations ? (
           <AdminPanel
+            currentUserId={user.id}
             canReviewRoles={canReviewRoles}
             operationOrders={operationOrders}
             operationsLoading={operationsLoading}
             roleRequests={roleRequests}
             roleRequestsLoading={roleRequestsLoading}
             reviewingRoleRequestId={reviewingRoleRequestId}
+            adminUsers={adminUsers}
+            adminUsersLoading={adminUsersLoading}
+            updatingUserId={updatingUserId}
             onReloadOrders={loadOperationOrders}
             onReloadRoleRequests={loadRoleRequests}
+            onReloadUsers={loadAdminUsers}
             onReviewRoleRequest={reviewRoleRequest}
+            onUpdateUserRoles={updateUserRoles}
           />
         ) : null}
+
+        <MenuSearch
+          query={searchQuery}
+          totalCount={items.length}
+          resultCount={filteredItems.length}
+          onChange={setSearchQuery}
+        />
 
         <MenuSection
           grouped={grouped}
@@ -618,29 +683,81 @@ function CartSummary({
   );
 }
 
+function MenuSearch({
+  query,
+  totalCount,
+  resultCount,
+  onChange,
+}: {
+  query: string;
+  totalCount: number;
+  resultCount: number;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <section className="rounded-lg border border-base-300 bg-base-100 p-5 shadow-sm">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <label className="form-control w-full md:max-w-xl">
+          <div className="label">
+            <span className="label-text font-bold">搜尋餐點</span>
+          </div>
+          <input
+            className="input input-bordered"
+            value={query}
+            placeholder="輸入餐點名稱、分類或描述，例如：蛋餅、奶茶、咖啡"
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </label>
+        <div className="flex items-center gap-2">
+          <span className="badge badge-outline">
+            {resultCount} / {totalCount} 項
+          </span>
+          {query ? (
+            <button className="btn btn-sm btn-ghost" onClick={() => onChange("")}>
+              清除
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function AdminPanel({
+  currentUserId,
   canReviewRoles,
   operationOrders,
   operationsLoading,
   roleRequests,
   roleRequestsLoading,
   reviewingRoleRequestId,
+  adminUsers,
+  adminUsersLoading,
+  updatingUserId,
   onReloadOrders,
   onReloadRoleRequests,
+  onReloadUsers,
   onReviewRoleRequest,
+  onUpdateUserRoles,
 }: {
+  currentUserId: string;
   canReviewRoles: boolean;
   operationOrders: Order[];
   operationsLoading: boolean;
   roleRequests: RoleRequest[];
   roleRequestsLoading: boolean;
   reviewingRoleRequestId: number | null;
+  adminUsers: SessionUser[];
+  adminUsersLoading: boolean;
+  updatingUserId: string | null;
   onReloadOrders: () => Promise<void>;
   onReloadRoleRequests: () => Promise<void>;
+  onReloadUsers: () => Promise<void>;
   onReviewRoleRequest: (
     requestId: number,
     status: "approved" | "rejected",
   ) => Promise<void>;
+  onUpdateUserRoles: (userId: string, roles: Role[]) => Promise<void>;
 }) {
   return (
     <section className="grid gap-4 rounded-lg border border-primary/30 bg-base-100 p-5 shadow-sm">
@@ -692,84 +809,237 @@ function AdminPanel({
       </div>
 
       {canReviewRoles ? (
-        <div className="grid gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="font-bold">角色申請審核</h3>
-            <button
-              className="btn btn-xs btn-outline"
-              disabled={roleRequestsLoading}
-              onClick={() => void onReloadRoleRequests()}
-            >
-              {roleRequestsLoading ? "刷新中..." : "刷新申請"}
-            </button>
-          </div>
+        <>
+          <EmployeeManager
+            currentUserId={currentUserId}
+            users={adminUsers}
+            loading={adminUsersLoading}
+            updatingUserId={updatingUserId}
+            onReload={onReloadUsers}
+            onUpdateUserRoles={onUpdateUserRoles}
+          />
 
-          <div className="overflow-x-auto rounded-lg border border-base-300">
-            <table className="table table-sm">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>使用者</th>
-                  <th>申請角色</th>
-                  <th>狀態</th>
-                  <th>理由</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {roleRequests.length === 0 ? (
-                  <tr>
-                    <td colSpan={6}>目前沒有角色申請。</td>
-                  </tr>
-                ) : (
-                  roleRequests.map((request) => (
-                    <tr key={request.id}>
-                      <td>{request.id}</td>
-                      <td className="max-w-[12rem] truncate">
-                        {request.userId}
-                      </td>
-                      <td>{roleLabel(request.requestedRole)}</td>
-                      <td>
-                        <span className={statusBadgeClass(request.status)}>
-                          {request.status}
-                        </span>
-                      </td>
-                      <td className="max-w-xs truncate">{request.reason}</td>
-                      <td>
-                        {request.status === "pending" ? (
-                          <div className="flex gap-2">
-                            <button
-                              className="btn btn-xs btn-success"
-                              disabled={reviewingRoleRequestId !== null}
-                              onClick={() =>
-                                void onReviewRoleRequest(request.id, "approved")
-                              }
-                            >
-                              核准
-                            </button>
-                            <button
-                              className="btn btn-xs btn-error btn-outline"
-                              disabled={reviewingRoleRequestId !== null}
-                              onClick={() =>
-                                void onReviewRoleRequest(request.id, "rejected")
-                              }
-                            >
-                              拒絕
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-sm opacity-60">已處理</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          <RoleRequestReview
+            roleRequests={roleRequests}
+            loading={roleRequestsLoading}
+            reviewingRoleRequestId={reviewingRoleRequestId}
+            onReload={onReloadRoleRequests}
+            onReviewRoleRequest={onReviewRoleRequest}
+          />
+        </>
       ) : null}
     </section>
+  );
+}
+
+function EmployeeManager({
+  currentUserId,
+  users,
+  loading,
+  updatingUserId,
+  onReload,
+  onUpdateUserRoles,
+}: {
+  currentUserId: string;
+  users: SessionUser[];
+  loading: boolean;
+  updatingUserId: string | null;
+  onReload: () => Promise<void>;
+  onUpdateUserRoles: (userId: string, roles: Role[]) => Promise<void>;
+}) {
+  const positions: Role[] = ["customer", "staff", "chef", "owner", "admin"];
+
+  function currentPosition(target: SessionUser): Role {
+    if (target.roles.includes("admin")) return "admin";
+    if (target.roles.includes("owner")) return "owner";
+    if (target.roles.includes("chef")) return "chef";
+    if (target.roles.includes("staff")) return "staff";
+    return "customer";
+  }
+
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-bold">員工職位管理</h3>
+        <button
+          className="btn btn-xs btn-outline"
+          disabled={loading}
+          onClick={() => void onReload()}
+        >
+          {loading ? "刷新中..." : "刷新員工"}
+        </button>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-base-300">
+        <table className="table table-sm">
+          <thead>
+            <tr>
+              <th>姓名</th>
+              <th>Email</th>
+              <th>目前職位</th>
+              <th>改職位</th>
+              <th>開除</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.length === 0 ? (
+              <tr>
+                <td colSpan={5}>目前沒有使用者資料。</td>
+              </tr>
+            ) : (
+              users.map((target) => {
+                const position = currentPosition(target);
+                const isSelf = target.id === currentUserId;
+                const isUpdating = updatingUserId === target.id;
+
+                return (
+                  <tr key={target.id}>
+                    <td>{target.name}</td>
+                    <td className="max-w-[14rem] truncate">{target.email}</td>
+                    <td>
+                      <div className="flex flex-wrap gap-1">
+                        {target.roles.map((role) => (
+                          <span key={role} className="badge badge-outline">
+                            {roleLabel(role)}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      <select
+                        className="select select-bordered select-xs"
+                        value={position}
+                        disabled={isSelf || isUpdating}
+                        onChange={(event) =>
+                          void onUpdateUserRoles(
+                            target.id,
+                            staffRolesFor(event.target.value as Role),
+                          )
+                        }
+                      >
+                        {positions.map((role) => (
+                          <option key={role} value={role}>
+                            {roleLabel(role)}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-xs btn-error btn-outline"
+                        disabled={isSelf || isUpdating || position === "customer"}
+                        onClick={() =>
+                          void onUpdateUserRoles(target.id, ["customer"])
+                        }
+                      >
+                        {isUpdating ? "處理中..." : "開除"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs opacity-60">
+        為了避免管理員把自己鎖在外面，不能在這裡修改自己的職位。
+      </p>
+    </div>
+  );
+}
+
+function RoleRequestReview({
+  roleRequests,
+  loading,
+  reviewingRoleRequestId,
+  onReload,
+  onReviewRoleRequest,
+}: {
+  roleRequests: RoleRequest[];
+  loading: boolean;
+  reviewingRoleRequestId: number | null;
+  onReload: () => Promise<void>;
+  onReviewRoleRequest: (
+    requestId: number,
+    status: "approved" | "rejected",
+  ) => Promise<void>;
+}) {
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-bold">角色申請審核</h3>
+        <button
+          className="btn btn-xs btn-outline"
+          disabled={loading}
+          onClick={() => void onReload()}
+        >
+          {loading ? "刷新中..." : "刷新申請"}
+        </button>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-base-300">
+        <table className="table table-sm">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>使用者</th>
+              <th>申請角色</th>
+              <th>狀態</th>
+              <th>理由</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {roleRequests.length === 0 ? (
+              <tr>
+                <td colSpan={6}>目前沒有角色申請。</td>
+              </tr>
+            ) : (
+              roleRequests.map((request) => (
+                <tr key={request.id}>
+                  <td>{request.id}</td>
+                  <td className="max-w-[12rem] truncate">{request.userId}</td>
+                  <td>{roleLabel(request.requestedRole)}</td>
+                  <td>
+                    <span className={statusBadgeClass(request.status)}>
+                      {request.status}
+                    </span>
+                  </td>
+                  <td className="max-w-xs truncate">{request.reason}</td>
+                  <td>
+                    {request.status === "pending" ? (
+                      <div className="flex gap-2">
+                        <button
+                          className="btn btn-xs btn-success"
+                          disabled={reviewingRoleRequestId !== null}
+                          onClick={() =>
+                            void onReviewRoleRequest(request.id, "approved")
+                          }
+                        >
+                          核准
+                        </button>
+                        <button
+                          className="btn btn-xs btn-error btn-outline"
+                          disabled={reviewingRoleRequestId !== null}
+                          onClick={() =>
+                            void onReviewRoleRequest(request.id, "rejected")
+                          }
+                        >
+                          拒絕
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-sm opacity-60">已處理</span>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -784,6 +1054,15 @@ function MenuSection({
   activeItemId: number | null;
   onAddToCart: (item: MenuItem) => Promise<void>;
 }) {
+  if (grouped.length === 0) {
+    return (
+      <section className="rounded-lg border border-base-300 bg-base-100 p-6 text-center shadow-sm">
+        <h2 className="text-lg font-bold">找不到符合的餐點</h2>
+        <p className="mt-2 text-sm opacity-70">換個關鍵字再試試看。</p>
+      </section>
+    );
+  }
+
   return (
     <section className="grid gap-6">
       {grouped.map(([category, categoryItems]) => (

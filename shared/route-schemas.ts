@@ -152,6 +152,10 @@ export const sessionUserResponseSchema = z.object({
   data: sessionUserSchema,
 });
 
+export const sessionUserListResponseSchema = z.object({
+  data: z.array(sessionUserSchema),
+});
+
 export const healthResponseSchema = z.object({
   status: z.string(),
 });

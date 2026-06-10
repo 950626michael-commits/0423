@@ -21,6 +21,7 @@ import {
   reviewRoleRequestParamsSchema,
   roleRequestListResponseSchema,
   roleRequestResponseSchema,
+  sessionUserListResponseSchema,
   sessionUserResponseSchema,
   submitOrderParamsSchema,
   toOrderResponse,
@@ -632,6 +633,36 @@ app.get(
     },
     response: {
       200: roleRequestListResponseSchema,
+      401: apiErrorResponseSchema,
+      403: apiErrorResponseSchema,
+    },
+  },
+);
+
+app.get(
+  "/api/admin/users",
+  async ({ request }) => {
+    const user = await requireUser(request);
+    requireRole(user, "admin");
+
+    const users = await db
+      .select({
+        id: authUsers.id,
+        email: authUsers.email,
+        name: authUsers.name,
+        roles: authUsers.roles,
+      })
+      .from(authUsers);
+
+    return { data: users };
+  },
+  {
+    detail: {
+      tags: ["admin"],
+      summary: "List users",
+    },
+    response: {
+      200: sessionUserListResponseSchema,
       401: apiErrorResponseSchema,
       403: apiErrorResponseSchema,
     },
