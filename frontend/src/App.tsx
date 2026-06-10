@@ -60,6 +60,10 @@ function staffRolesFor(position: Role): Role[] {
   return position === "customer" ? ["customer"] : ["customer", position];
 }
 
+function roleRequestLabel(role: Role) {
+  return role === "customer" ? "\u96e2\u8077\u7533\u8acb" : roleLabel(role);
+}
+
 function menuItemSearchText(item: MenuItem) {
   return [item.name, item.category, item.description, item.image_url]
     .join(" ")
@@ -512,7 +516,7 @@ export default function App() {
     }
   }
 
-  async function requestRole(role: "staff" | "chef") {
+  async function requestRole(role: "staff" | "chef" | "customer", reason: string) {
     setRequestingRole(role);
     setRoleRequestMessage("");
 
@@ -521,14 +525,16 @@ export default function App() {
         method: "POST",
         body: JSON.stringify({
           requestedRole: role,
-          reason: `我想申請 ${roleLabel(role)} 權限，以協助廖世宇的早餐店營運。`,
+          reason,
         }),
       });
 
-      setRoleRequestMessage("申請已送出，請等待管理員審核。");
+      setRoleRequestMessage("\u7533\u8acb\u5df2\u9001\u51fa\uff0c\u8acb\u7b49\u5f85\u7ba1\u7406\u54e1\u5be9\u6838\u3002");
     } catch (error) {
       setRoleRequestMessage(
-        error instanceof Error ? error.message : "角色申請送出失敗",
+        error instanceof Error
+          ? error.message
+          : "\u7533\u8acb\u9001\u51fa\u5931\u6557",
       );
     } finally {
       setRequestingRole(null);
@@ -769,37 +775,72 @@ function RoleRequestPanel({
   user: SessionUser;
   requestingRole: Role | null;
   message: string;
-  onRequestRole: (role: "staff" | "chef") => Promise<void>;
+  onRequestRole: (role: "staff" | "chef" | "customer", reason: string) => Promise<void>;
 }) {
+  const [purpose, setPurpose] = useState("");
   const alreadyStaff = user.roles.includes("staff");
   const alreadyChef = user.roles.includes("chef");
   const isAdmin = user.roles.includes("admin");
+  const canResign = !isAdmin && user.roles.some((role) => role !== "customer");
+  const trimmedPurpose = purpose.trim();
+  const purposeIsValid = trimmedPurpose.length >= 10;
+
+  async function submitRequest(role: "staff" | "chef" | "customer") {
+    await onRequestRole(role, trimmedPurpose);
+    setPurpose("");
+  }
 
   return (
     <section className="rounded-lg border border-base-300 bg-base-100 p-5 shadow-sm">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="grid gap-4">
         <div>
-          <h2 className="text-lg font-bold">角色申請</h2>
+          <h2 className="text-lg font-bold">{"\u8077\u4f4d\u7533\u8acb"}</h2>
           <p className="text-sm opacity-70">
-            一般使用者可以申請櫃台或廚房權限，管理員審核後立即生效。
+            {"\u8acb\u5148\u586b\u5beb\u7533\u8acb\u76ee\u7684\uff0c\u7ba1\u7406\u8005\u5be9\u6838\u6642\u6703\u770b\u5230\u9019\u6bb5\u8aaa\u660e\u3002"}
           </p>
           {message ? <p className="mt-2 text-sm text-primary">{message}</p> : null}
         </div>
 
-        <div className="flex gap-2">
+        <label className="form-control">
+          <div className="label">
+            <span className="label-text font-semibold">{"\u7533\u8acb\u76ee\u7684"}</span>
+            <span className="label-text-alt">{trimmedPurpose.length} / 10</span>
+          </div>
+          <textarea
+            className="textarea textarea-bordered min-h-24"
+            value={purpose}
+            placeholder={"\u4f8b\u5982\uff1a\u60f3\u5354\u52a9\u9ede\u9910\u3001\u51fa\u9910\uff0c\u6216\u8aaa\u660e\u96e2\u8077\u539f\u56e0"}
+            onChange={(event) => setPurpose(event.target.value)}
+          />
+        </label>
+
+        <div className="flex flex-wrap gap-2">
           <button
             className="btn btn-sm btn-outline"
-            disabled={isAdmin || alreadyStaff || requestingRole !== null}
-            onClick={() => void onRequestRole("staff")}
+            disabled={isAdmin || alreadyStaff || requestingRole !== null || !purposeIsValid}
+            onClick={() => void submitRequest("staff")}
           >
-            {requestingRole === "staff" ? "送出中..." : "申請櫃台"}
+            {requestingRole === "staff"
+              ? "\u9001\u51fa\u4e2d..."
+              : "\u7533\u8acb\u6ac3\u53f0"}
           </button>
           <button
             className="btn btn-sm btn-outline"
-            disabled={isAdmin || alreadyChef || requestingRole !== null}
-            onClick={() => void onRequestRole("chef")}
+            disabled={isAdmin || alreadyChef || requestingRole !== null || !purposeIsValid}
+            onClick={() => void submitRequest("chef")}
           >
-            {requestingRole === "chef" ? "送出中..." : "申請廚房"}
+            {requestingRole === "chef"
+              ? "\u9001\u51fa\u4e2d..."
+              : "\u7533\u8acb\u5eda\u5e2b"}
+          </button>
+          <button
+            className="btn btn-sm btn-error btn-outline"
+            disabled={!canResign || requestingRole !== null || !purposeIsValid}
+            onClick={() => void submitRequest("customer")}
+          >
+            {requestingRole === "customer"
+              ? "\u9001\u51fa\u4e2d..."
+              : "\u63d0\u51fa\u96e2\u8077\u7533\u8acb"}
           </button>
         </div>
       </div>
@@ -854,7 +895,8 @@ function ComboBuilder({
 }) {
   const selectedFood = foodOptions.find((item) => item.id === foodId);
   const selectedDrink = drinkOptions.find((item) => item.id === drinkId);
-  const comboTotal = (selectedFood?.price ?? 0) + (selectedDrink?.price ?? 0);
+  const comboOriginalTotal = (selectedFood?.price ?? 0) + (selectedDrink?.price ?? 0);
+  const comboTotal = Math.max(0, comboOriginalTotal - 10);
   const canAdd = Boolean(selectedFood && selectedDrink);
 
   return (
@@ -863,7 +905,7 @@ function ComboBuilder({
         <div>
           <h2 className="text-lg font-bold">{"\u5957\u9910\u7d44\u5408"}</h2>
           <p className="text-sm opacity-70">
-            {"\u56fa\u5b9a\u4e00\u4efd\u9910\u9ede\u6216\u86cb\u9905\uff0c\u642d\u914d\u4e00\u676f\u98f2\u6599\u3002"}
+            {"\u56fa\u5b9a\u4e00\u4efd\u9910\u9ede\u6216\u86cb\u9905\uff0c\u642d\u914d\u4e00\u676f\u98f2\u6599\uff0c\u5957\u9910\u73fe\u6298 10 \u5143\u3002"}
           </p>
         </div>
 
@@ -1274,7 +1316,7 @@ function RoleRequestReview({
                 <tr key={request.id}>
                   <td>{request.id}</td>
                   <td className="max-w-[12rem] truncate">{request.userId}</td>
-                  <td>{roleLabel(request.requestedRole)}</td>
+                  <td>{roleRequestLabel(request.requestedRole)}</td>
                   <td>
                     <span className={statusBadgeClass(request.status)}>
                       {request.status}

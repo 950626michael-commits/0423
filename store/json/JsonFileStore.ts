@@ -61,10 +61,48 @@ function cloneDefaultMenu(): MenuItem[] {
   return defaultMenu.map((item) => ({ ...item }));
 }
 
+const comboDiscount = 10;
+
+function menuItemSearchText(item: MenuItem): string {
+  return [item.name, item.category, item.description, item.image_url]
+    .join(" ")
+    .toLowerCase();
+}
+
+function isDrinkItem(item: MenuItem): boolean {
+  const text = menuItemSearchText(item);
+  return [
+    "drink",
+    "tea",
+    "coffee",
+    "latte",
+    "milk",
+    "soy",
+    "juice",
+    "beverage",
+    "\u98f2",
+    "\u8336",
+    "\u5496\u5561",
+    "\u8c46\u6f3f",
+    "\u5976",
+    "\u679c\u6c41",
+  ].some((keyword) => text.includes(keyword));
+}
+
 function calculateOrderTotal(items: OrderItem[]): number {
-  return items.reduce((sum, orderItem) => {
+  const subtotal = items.reduce((sum, orderItem) => {
     return sum + orderItem.item.price * orderItem.qty;
   }, 0);
+  const drinkQty = items.reduce(
+    (sum, orderItem) => sum + (isDrinkItem(orderItem.item) ? orderItem.qty : 0),
+    0,
+  );
+  const foodQty = items.reduce(
+    (sum, orderItem) => sum + (!isDrinkItem(orderItem.item) ? orderItem.qty : 0),
+    0,
+  );
+
+  return Math.max(0, subtotal - Math.min(foodQty, drinkQty) * comboDiscount);
 }
 
 function normalizeMenuItem(item: Partial<MenuItem>): MenuItem {

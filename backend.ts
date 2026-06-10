@@ -742,9 +742,12 @@ app.patch(
         .limit(1);
 
       if (targetUser) {
-        const nextRoles = Array.from(
-          new Set([...targetUser.roles, existingRequest.requestedRole]),
-        );
+        const nextRoles =
+          existingRequest.requestedRole === "customer"
+            ? ["customer"]
+            : Array.from(
+                new Set([...targetUser.roles, existingRequest.requestedRole]),
+              );
 
         await db
           .update(authUsers)

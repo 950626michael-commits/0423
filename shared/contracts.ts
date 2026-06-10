@@ -46,7 +46,7 @@ export const sessionUserSchema = userSchema
 export const roleRequestSchema = z.object({
   id: z.number().int().min(1),
   userId: z.string().min(1),
-  requestedRole: roleSchema.exclude(["customer", "owner", "admin"]),
+  requestedRole: roleSchema.exclude(["owner", "admin"]),
   reason: z.string().min(10),
   status: z.enum(["pending", "approved", "rejected"]),
   requestedAt: z.string().min(1),

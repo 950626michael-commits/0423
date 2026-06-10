@@ -90,7 +90,7 @@ export const submitOrderParamsSchema = z.object({
 
 /** POST /api/users/me/role-request */
 export const createRoleRequestBodySchema = z.object({
-  requestedRole: roleSchema.exclude(["customer", "owner", "admin"]),
+  requestedRole: roleSchema.exclude(["owner", "admin"]),
   reason: z.string().min(10),
 });
 
