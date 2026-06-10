@@ -5,6 +5,56 @@ tags: []
 ---
 
 # 00_demo01 - V9 (Better Auth + Google OAuth)
+## 最新功能總覽：廖世宇的早餐店
+
+這是一套早餐店線上點餐與 RBAC 權限管理系統，已整合 Google 登入、菜單瀏覽、購物車、訂單管理、角色申請、員工管理、Render 部署與 Neon PostgreSQL 資料庫。
+
+### 使用者功能
+
+- **Google 登入**：使用 Google OAuth 登入系統。
+- **瀏覽菜單**：查看早餐店餐點、圖片、價格與描述。
+- **搜尋餐點**：可依餐點名稱、分類或描述快速搜尋。
+- **店長特選**：搜尋欄旁新增「店長特選」按鈕，可連到指定 YouTube 網址。
+- **購物車與送出訂單**：可加入餐點、調整數量並送出訂單。
+- **套餐功能**：固定選一份餐點 / 蛋餅加一杯飲料。
+- **套餐優惠**：每組套餐折 10 元，折扣會實際反映在訂單總價。
+- **營業時間提示**：營業時間為早上 5:00 到下午 3:00。
+  - 營業時間內會顯示「營業中」與今天關門時間。
+  - 非營業時間會顯示「已打烊」與明天開門時間。
+- **中英文介面切換**：右上角可切換中文 / English。
+
+### RBAC 權限與申請功能
+
+- **角色權限**：支援 `customer`、`staff`、`chef`、`owner`、`admin`。
+- **職位申請**：一般使用者可申請櫃台或廚師職位。
+- **申請目的欄位**：送出職位申請時可填寫目的，管理者審核時可查看。
+- **離職申請**：員工可提出離職申請。
+- **管理者審核**：管理者同意離職後，該使用者角色會回到 `customer`。
+- **清空申請**：管理者可清空所有申請紀錄，方便測試與整理資料。
+
+### 管理後台功能
+
+- **查看訂單**：員工、廚師、店長、管理員可查看營運訂單。
+- **刪除訂單**：`owner` 與 `admin` 可以在後台刪除訂單。
+- **管理員工職位**：`admin` 可修改使用者職位或將員工改回一般顧客。
+- **審核角色申請**：`admin` 可同意或拒絕職位 / 離職申請。
+
+### 技術架構
+
+- **前端**：React 19 + Vite + DaisyUI
+- **後端**：Elysia + TypeScript
+- **驗證**：Better Auth + Google OAuth
+- **資料庫**：Neon PostgreSQL
+- **ORM**：Drizzle ORM
+- **部署**：Render
+- **資料契約**：`shared/contracts.ts` 與 `shared/route-schemas.ts` 共用前後端型別與 API schema
+
+### 重要網址
+
+- GitHub Repo：`https://github.com/950626michael-commits/0423`
+- Final 分支：`https://github.com/950626michael-commits/0423/tree/final`
+- Render 網址：請到 Render Dashboard 複製 `https://你的服務名稱.onrender.com`
+- Neon 後台：請到 Neon Console 複製 Project 頁面網址，不要公開 `.env` 內的資料庫連線字串
 
 廖世宇的早餐店 - 完整版
 
