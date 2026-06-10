@@ -60,6 +60,51 @@ function staffRolesFor(position: Role): Role[] {
   return position === "customer" ? ["customer"] : ["customer", position];
 }
 
+function menuItemSearchText(item: MenuItem) {
+  return [item.name, item.category, item.description, item.image_url]
+    .join(" ")
+    .toLowerCase();
+}
+
+function isDrinkItem(item: MenuItem) {
+  const text = menuItemSearchText(item);
+  return [
+    "drink",
+    "tea",
+    "coffee",
+    "latte",
+    "milk",
+    "soy",
+    "juice",
+    "beverage",
+    "\u98f2",
+    "\u8336",
+    "\u5496\u5561",
+    "\u8c46\u6f3f",
+    "\u5976",
+    "\u679c\u6c41",
+  ].some((keyword) => text.includes(keyword));
+}
+
+function isMainComboItem(item: MenuItem) {
+  const text = menuItemSearchText(item);
+  if (isDrinkItem(item)) return false;
+
+  return [
+    "egg",
+    "toast",
+    "sandwich",
+    "burger",
+    "pancake",
+    "roll",
+    "\u86cb\u9905",
+    "\u5410\u53f8",
+    "\u6f22\u5821",
+    "\u4e09\u660e\u6cbb",
+    "\u9910",
+  ].some((keyword) => text.includes(keyword));
+}
+
 export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [authError, setAuthError] = useState("");
@@ -82,6 +127,9 @@ export default function App() {
   const [operationsLoading, setOperationsLoading] = useState(false);
 
   const [activeItemId, setActiveItemId] = useState<number | null>(null);
+  const [comboFoodId, setComboFoodId] = useState<number | null>(null);
+  const [comboDrinkId, setComboDrinkId] = useState<number | null>(null);
+  const [isAddingCombo, setIsAddingCombo] = useState(false);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
 
@@ -92,6 +140,7 @@ export default function App() {
   const [reviewingRoleRequestId, setReviewingRoleRequestId] = useState<
     number | null
   >(null);
+  const [clearingRoleRequests, setClearingRoleRequests] = useState(false);
 
   const [adminUsers, setAdminUsers] = useState<SessionUser[]>([]);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
@@ -147,6 +196,27 @@ export default function App() {
         Boolean(entry),
       );
   }, [cartQtyByItemId, items]);
+
+  const comboFoodOptions = useMemo(() => {
+    const preferred = items.filter(isMainComboItem);
+    return preferred.length > 0
+      ? preferred
+      : items.filter((item) => !isDrinkItem(item));
+  }, [items]);
+
+  const comboDrinkOptions = useMemo(() => items.filter(isDrinkItem), [items]);
+
+  useEffect(() => {
+    if (!comboFoodId && comboFoodOptions[0]) {
+      setComboFoodId(comboFoodOptions[0].id);
+    }
+  }, [comboFoodId, comboFoodOptions]);
+
+  useEffect(() => {
+    if (!comboDrinkId && comboDrinkOptions[0]) {
+      setComboDrinkId(comboDrinkOptions[0].id);
+    }
+  }, [comboDrinkId, comboDrinkOptions]);
 
   useEffect(() => {
     let mounted = true;
@@ -302,6 +372,13 @@ export default function App() {
     return payload.data.id;
   }
 
+  async function patchOrderItem(targetOrderId: number, itemId: number, qty: number) {
+    return readApi<ApiDataResponse<Order>>(`/api/orders/${targetOrderId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ itemId, qty }),
+    });
+  }
+
   async function handleGoogleSignIn() {
     setAuthError("");
     setIsGoogleSigningIn(true);
@@ -346,13 +423,7 @@ export default function App() {
     try {
       const targetOrderId = await ensureOrder();
       const nextQty = (cartQtyByItemId[item.id] ?? 0) + 1;
-      const payload = await readApi<ApiDataResponse<Order>>(
-        `/api/orders/${targetOrderId}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ itemId: item.id, qty: nextQty }),
-        },
-      );
+      const payload = await patchOrderItem(targetOrderId, item.id, nextQty);
 
       syncCartFromOrder(payload.data);
     } catch (error) {
@@ -362,13 +433,56 @@ export default function App() {
     }
   }
 
+  async function addComboToCart() {
+    if (!user) {
+      setNotice("\u8acb\u5148\u767b\u5165\u5f8c\u518d\u52a0\u5165\u5957\u9910\u3002");
+      return;
+    }
+
+    if (!comboFoodId || !comboDrinkId) {
+      setNotice(
+        "\u5957\u9910\u9700\u8981\u9078\u4e00\u4efd\u9910\u9ede\u548c\u4e00\u676f\u98f2\u6599\u3002",
+      );
+      return;
+    }
+
+    setNotice("");
+    setIsAddingCombo(true);
+
+    try {
+      const targetOrderId = await ensureOrder();
+      const nextQuantities = new Map<number, number>();
+
+      for (const itemId of [comboFoodId, comboDrinkId]) {
+        nextQuantities.set(
+          itemId,
+          (nextQuantities.get(itemId) ?? cartQtyByItemId[itemId] ?? 0) + 1,
+        );
+      }
+
+      let latestOrder: Order | null = null;
+      for (const [itemId, qty] of nextQuantities) {
+        const payload = await patchOrderItem(targetOrderId, itemId, qty);
+        latestOrder = payload.data;
+      }
+
+      if (latestOrder) syncCartFromOrder(latestOrder);
+      setNotice("\u5957\u9910\u5df2\u52a0\u5165\u8cfc\u7269\u8eca\u3002");
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "\u52a0\u5165\u5957\u9910\u5931\u6557",
+      );
+    } finally {
+      setIsAddingCombo(false);
+    }
+  }
+
   async function setCartItemQty(itemId: number, qty: number) {
     if (!orderId) return;
 
-    const payload = await readApi<ApiDataResponse<Order>>(`/api/orders/${orderId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ itemId, qty }),
-    });
+    const payload = await patchOrderItem(orderId, itemId, qty);
 
     syncCartFromOrder(payload.data);
   }
@@ -446,6 +560,29 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "審核角色申請失敗");
     } finally {
       setReviewingRoleRequestId(null);
+    }
+  }
+
+  async function clearRoleRequests() {
+    setClearingRoleRequests(true);
+    setNotice("");
+
+    try {
+      const payload = await readApi<ApiDataResponse<{ deleted: number }>>(
+        "/api/admin/role-requests",
+        { method: "DELETE" },
+      );
+
+      setRoleRequests([]);
+      setNotice(`\u5df2\u6e05\u7a7a ${payload.data.deleted} \u7b46\u7533\u8acb\u3002`);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "\u6e05\u7a7a\u7533\u8acb\u5931\u6557",
+      );
+    } finally {
+      setClearingRoleRequests(false);
     }
   }
 
@@ -566,16 +703,29 @@ export default function App() {
             roleRequests={roleRequests}
             roleRequestsLoading={roleRequestsLoading}
             reviewingRoleRequestId={reviewingRoleRequestId}
+            clearingRoleRequests={clearingRoleRequests}
             adminUsers={adminUsers}
             adminUsersLoading={adminUsersLoading}
             updatingUserId={updatingUserId}
             onReloadOrders={loadOperationOrders}
             onReloadRoleRequests={loadRoleRequests}
+            onClearRoleRequests={clearRoleRequests}
             onReloadUsers={loadAdminUsers}
             onReviewRoleRequest={reviewRoleRequest}
             onUpdateUserRoles={updateUserRoles}
           />
         ) : null}
+
+        <ComboBuilder
+          foodOptions={comboFoodOptions}
+          drinkOptions={comboDrinkOptions}
+          foodId={comboFoodId}
+          drinkId={comboDrinkId}
+          isAdding={isAddingCombo}
+          onChangeFood={setComboFoodId}
+          onChangeDrink={setComboDrinkId}
+          onAddCombo={() => void addComboToCart()}
+        />
 
         <MenuSearch
           query={searchQuery}
@@ -683,6 +833,100 @@ function CartSummary({
   );
 }
 
+function ComboBuilder({
+  foodOptions,
+  drinkOptions,
+  foodId,
+  drinkId,
+  isAdding,
+  onChangeFood,
+  onChangeDrink,
+  onAddCombo,
+}: {
+  foodOptions: MenuItem[];
+  drinkOptions: MenuItem[];
+  foodId: number | null;
+  drinkId: number | null;
+  isAdding: boolean;
+  onChangeFood: (itemId: number) => void;
+  onChangeDrink: (itemId: number) => void;
+  onAddCombo: () => void;
+}) {
+  const selectedFood = foodOptions.find((item) => item.id === foodId);
+  const selectedDrink = drinkOptions.find((item) => item.id === drinkId);
+  const comboTotal = (selectedFood?.price ?? 0) + (selectedDrink?.price ?? 0);
+  const canAdd = Boolean(selectedFood && selectedDrink);
+
+  return (
+    <section className="rounded-lg border border-base-300 bg-base-100 p-5 shadow-sm">
+      <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+        <div>
+          <h2 className="text-lg font-bold">{"\u5957\u9910\u7d44\u5408"}</h2>
+          <p className="text-sm opacity-70">
+            {"\u56fa\u5b9a\u4e00\u4efd\u9910\u9ede\u6216\u86cb\u9905\uff0c\u642d\u914d\u4e00\u676f\u98f2\u6599\u3002"}
+          </p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="form-control">
+            <div className="label">
+              <span className="label-text">
+                {"\u9910\u9ede / \u86cb\u9905"}
+              </span>
+            </div>
+            <select
+              className="select select-bordered"
+              value={foodId ?? ""}
+              onChange={(event) => onChangeFood(Number(event.target.value))}
+            >
+              {foodOptions.length === 0 ? (
+                <option value="">{"\u6c92\u6709\u53ef\u9078\u9910\u9ede"}</option>
+              ) : (
+                foodOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} ${item.price}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+
+          <label className="form-control">
+            <div className="label">
+              <span className="label-text">{"\u98f2\u6599"}</span>
+            </div>
+            <select
+              className="select select-bordered"
+              value={drinkId ?? ""}
+              onChange={(event) => onChangeDrink(Number(event.target.value))}
+            >
+              {drinkOptions.length === 0 ? (
+                <option value="">{"\u6c92\u6709\u53ef\u9078\u98f2\u6599"}</option>
+              ) : (
+                drinkOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} ${item.price}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+        </div>
+
+        <button
+          className="btn btn-primary"
+          disabled={!canAdd || isAdding}
+          onClick={onAddCombo}
+        >
+          {isAdding
+            ? "\u52a0\u5165\u4e2d..."
+            : `\u52a0\u5165\u5957\u9910 $${comboTotal}`}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function MenuSearch({
   query,
   totalCount,
@@ -708,7 +952,15 @@ function MenuSearch({
             onChange={(event) => onChange(event.target.value)}
           />
         </label>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            className="btn btn-sm btn-secondary"
+            href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {"\u5e97\u9577\u7279\u9078"}
+          </a>
           <span className="badge badge-outline">
             {resultCount} / {totalCount} 項
           </span>
@@ -731,11 +983,13 @@ function AdminPanel({
   roleRequests,
   roleRequestsLoading,
   reviewingRoleRequestId,
+  clearingRoleRequests,
   adminUsers,
   adminUsersLoading,
   updatingUserId,
   onReloadOrders,
   onReloadRoleRequests,
+  onClearRoleRequests,
   onReloadUsers,
   onReviewRoleRequest,
   onUpdateUserRoles,
@@ -747,11 +1001,13 @@ function AdminPanel({
   roleRequests: RoleRequest[];
   roleRequestsLoading: boolean;
   reviewingRoleRequestId: number | null;
+  clearingRoleRequests: boolean;
   adminUsers: SessionUser[];
   adminUsersLoading: boolean;
   updatingUserId: string | null;
   onReloadOrders: () => Promise<void>;
   onReloadRoleRequests: () => Promise<void>;
+  onClearRoleRequests: () => Promise<void>;
   onReloadUsers: () => Promise<void>;
   onReviewRoleRequest: (
     requestId: number,
@@ -823,7 +1079,9 @@ function AdminPanel({
             roleRequests={roleRequests}
             loading={roleRequestsLoading}
             reviewingRoleRequestId={reviewingRoleRequestId}
+            clearingRoleRequests={clearingRoleRequests}
             onReload={onReloadRoleRequests}
+            onClear={onClearRoleRequests}
             onReviewRoleRequest={onReviewRoleRequest}
           />
         </>
@@ -953,13 +1211,17 @@ function RoleRequestReview({
   roleRequests,
   loading,
   reviewingRoleRequestId,
+  clearingRoleRequests,
   onReload,
+  onClear,
   onReviewRoleRequest,
 }: {
   roleRequests: RoleRequest[];
   loading: boolean;
   reviewingRoleRequestId: number | null;
+  clearingRoleRequests: boolean;
   onReload: () => Promise<void>;
+  onClear: () => Promise<void>;
   onReviewRoleRequest: (
     requestId: number,
     status: "approved" | "rejected",
@@ -975,6 +1237,18 @@ function RoleRequestReview({
           onClick={() => void onReload()}
         >
           {loading ? "刷新中..." : "刷新申請"}
+        </button>
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          className="btn btn-xs btn-error btn-outline"
+          disabled={loading || clearingRoleRequests || roleRequests.length === 0}
+          onClick={() => void onClear()}
+        >
+          {clearingRoleRequests
+            ? "\u6e05\u7a7a\u4e2d..."
+            : "\u6e05\u7a7a\u7533\u8acb"}
         </button>
       </div>
 

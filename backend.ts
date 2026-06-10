@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import toTaipeiDateTime from "./util.ts";
 import {
   apiErrorResponseSchema,
+  clearRoleRequestsResponseSchema,
   createMenuItemBodySchema,
   createRoleRequestBodySchema,
   deleteMenuItemParamsSchema,
@@ -663,6 +664,31 @@ app.get(
     },
     response: {
       200: sessionUserListResponseSchema,
+      401: apiErrorResponseSchema,
+      403: apiErrorResponseSchema,
+    },
+  },
+);
+
+app.delete(
+  "/api/admin/role-requests",
+  async ({ request }) => {
+    const user = await requireUser(request);
+    requireRole(user, "admin");
+
+    const deletedRows = await db
+      .delete(roleRequestsTable)
+      .returning({ id: roleRequestsTable.id });
+
+    return { data: { deleted: deletedRows.length } };
+  },
+  {
+    detail: {
+      tags: ["admin"],
+      summary: "Clear role requests",
+    },
+    response: {
+      200: clearRoleRequestsResponseSchema,
       401: apiErrorResponseSchema,
       403: apiErrorResponseSchema,
     },

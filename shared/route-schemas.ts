@@ -148,6 +148,12 @@ export const roleRequestListResponseSchema = z.object({
   data: z.array(roleRequestSchema),
 });
 
+export const clearRoleRequestsResponseSchema = z.object({
+  data: z.object({
+    deleted: z.number().int().min(0),
+  }),
+});
+
 export const sessionUserResponseSchema = z.object({
   data: sessionUserSchema,
 });
