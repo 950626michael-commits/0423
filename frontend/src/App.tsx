@@ -15,6 +15,10 @@ function buildApiUrl(path: string) {
   return `${apiBaseUrl}${path}`;
 }
 
+function isHttpStatus(error: unknown, status: number): boolean {
+  return error instanceof Error && error.message.includes(`HTTP ${status}`);
+}
+
 export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [authError, setAuthError] = useState("");
@@ -196,6 +200,16 @@ export default function App() {
       mounted = false;
     };
   }, []);
+
+  async function refreshMenu(): Promise<void> {
+    const response = await fetch(buildApiUrl("/api/menu"));
+    if (!response.ok) {
+      throw new Error(`Refresh menu failed: HTTP ${response.status}`);
+    }
+
+    const payload = (await response.json()) as ApiDataResponse<MenuItem[]>;
+    setItems(Array.isArray(payload?.data) ? payload.data : []);
+  }
 
   useEffect(() => {
     if (!user) {
@@ -512,6 +526,18 @@ export default function App() {
         return;
       }
 
+      if (isHttpStatus(cartError, 409)) {
+        setActionError(
+          "購物車裡有舊版菜單品項，已重新整理菜單，請重新加入。",
+        );
+        resetCartState();
+        await refreshMenu().catch((refreshError) => {
+          console.error(refreshError);
+        });
+        console.error(cartError);
+        return;
+      }
+
       if (user) {
         try {
           const recoveredOrder = await loadCurrentOrder();
@@ -596,6 +622,21 @@ export default function App() {
       setIsCartOpen(false);
       await loadOrderHistory();
     } catch (submitError) {
+      if (isHttpStatus(submitError, 409)) {
+        setActionError(
+          "購物車內有價格或版本已變更的品項，請清空後重新加入再送出。",
+        );
+        await Promise.all([
+          refreshMenu().catch((refreshError) => {
+            console.error(refreshError);
+          }),
+          loadCurrentOrder().catch((refreshError) => {
+            console.error(refreshError);
+          }),
+        ]);
+        console.error(submitError);
+        return;
+      }
       setActionError("送出訂單失敗，請稍後再試。");
       console.error(submitError);
     } finally {
@@ -882,6 +923,21 @@ export default function App() {
                     </figure>
                     <div className="card-body">
                       <h3 className="card-title text-lg">{item.name}</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {item.version ? (
+                          <span className="badge badge-outline">
+                            v{item.version}
+                          </span>
+                        ) : null}
+                        {item.isRecentlyUpdated ? (
+                          <span className="badge badge-info">最近更新</span>
+                        ) : null}
+                        {item.priceChanged && item.previousPrice ? (
+                          <span className="badge badge-warning">
+                            原價 ${item.previousPrice}
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="text-sm opacity-80 line-clamp-2 min-h-[2.75rem]">
                         {item.description}
                       </p>

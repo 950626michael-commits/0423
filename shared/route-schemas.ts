@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Order } from "./contracts.ts";
 import {
+  menuItemVersionHistorySchema,
   menuItemSchema,
   orderSchema,
   roleRequestSchema,
@@ -61,6 +62,12 @@ export const updateMenuItemBodySchema = z.object({
   category: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
   image_url: z.string().min(1).optional(),
+  changeReason: z.string().min(1).optional(),
+});
+
+/** GET /api/menu/:id/history */
+export const getMenuHistoryParamsSchema = z.object({
+  id: z.string().regex(/^[0-9]+$/),
 });
 
 /** DELETE /api/menu/:id */
@@ -126,6 +133,10 @@ export const menuListResponseSchema = z.object({
 
 export const menuItemResponseSchema = z.object({
   data: menuItemSchema,
+});
+
+export const menuHistoryResponseSchema = z.object({
+  data: z.array(menuItemVersionHistorySchema),
 });
 
 export const orderListResponseSchema = z.object({

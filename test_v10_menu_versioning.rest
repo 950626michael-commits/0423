@@ -1,0 +1,31 @@
+@port = 3000
+@url = http://localhost:{{port}}
+@menuId = 1
+@orderId = 1
+
+### Health check
+GET {{url}}/health
+
+### Current menu should only return current versions
+GET {{url}}/api/menu
+
+### Admin/owner: create a new version instead of overwriting the old row
+PATCH {{url}}/api/menu/{{menuId}}
+content-type: application/json
+
+{
+  "price": 55,
+  "changeReason": "V10 versioning verification"
+}
+
+### Staff/chef/owner/admin: inspect all versions for one logical item
+GET {{url}}/api/menu/{{menuId}}/history
+
+### Customer: stale-cart verification
+### 1. Add an item to a pending cart.
+### 2. Update that menu item above so the cart points to an old version.
+### 3. Submit should return HTTP 409 MENU_VERSION_OUTDATED.
+POST {{url}}/api/orders/{{orderId}}/submit
+content-type: application/json
+
+{}

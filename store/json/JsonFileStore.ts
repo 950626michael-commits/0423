@@ -221,7 +221,9 @@ export class JsonFileStore implements Store {
       category?: string;
       description?: string;
       image_url?: string;
+      changeReason?: string;
     },
+    _input?: { userId?: string },
   ): Promise<MenuItem | null> {
     const menuItem = this.menu.find((item) => item.id === menuId);
     if (!menuItem) {
@@ -372,7 +374,8 @@ export class JsonFileStore implements Store {
           | "ORDER_NOT_FOUND"
           | "ORDER_NOT_OWNED"
           | "ORDER_NOT_EDITABLE"
-          | "EMPTY_ORDER";
+          | "EMPTY_ORDER"
+          | "MENU_VERSION_OUTDATED";
       }
   > {
     const order = this.orders.find((targetOrder) => targetOrder.id === orderId);

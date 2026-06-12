@@ -64,6 +64,13 @@
       "when": 1781021000000,
       "tag": "0008_user_roles_text_array",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781022000000,
+      "tag": "0009_menu_versioning",
+      "breakpoints": true
     }
   ]
 }
