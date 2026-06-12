@@ -126,6 +126,19 @@ function buildApiUrl(path: string) {
   return `${apiBaseUrl}${path}`;
 }
 
+class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+function isHttpStatus(error: unknown, status: number): boolean {
+  return error instanceof ApiRequestError && error.status === status;
+}
+
 async function readApi<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(buildApiUrl(path), {
     credentials: "include",
@@ -142,7 +155,7 @@ async function readApi<T>(path: string, init?: RequestInit): Promise<T> {
       typeof payload?.error === "string"
         ? payload.error
         : `HTTP ${response.status}`;
-    throw new Error(message);
+    throw new ApiRequestError(message, response.status);
   }
 
   return (await response.json()) as T;
@@ -426,6 +439,11 @@ export default function App() {
     setIsCartOpen(false);
   }
 
+  async function refreshMenu() {
+    const payload = await readApi<ApiDataResponse<MenuItem[]>>("/api/menu");
+    setItems(payload.data);
+  }
+
   async function loadCurrentOrder() {
     const payload =
       await readApi<ApiDataResponse<Order | null>>("/api/orders/current");
@@ -576,6 +594,15 @@ export default function App() {
 
       syncCartFromOrder(payload.data);
     } catch (error) {
+      if (isHttpStatus(error, 409)) {
+        setNotice("\u8cfc\u7269\u8eca\u88e1\u6709\u820a\u7248\u83dc\u55ae\u54c1\u9805\uff0c\u5df2\u91cd\u65b0\u6574\u7406\u83dc\u55ae\uff0c\u8acb\u91cd\u65b0\u52a0\u5165\u3002");
+        resetCartState();
+        await refreshMenu().catch((refreshError) => {
+          console.error(refreshError);
+        });
+        return;
+      }
+
       setNotice(error instanceof Error ? error.message : "加入購物車失敗");
     } finally {
       setActiveItemId(null);
@@ -618,6 +645,15 @@ export default function App() {
       if (latestOrder) syncCartFromOrder(latestOrder);
       setNotice("\u5957\u9910\u5df2\u52a0\u5165\u8cfc\u7269\u8eca\u3002");
     } catch (error) {
+      if (isHttpStatus(error, 409)) {
+        setNotice("\u8cfc\u7269\u8eca\u88e1\u6709\u820a\u7248\u83dc\u55ae\u54c1\u9805\uff0c\u5df2\u91cd\u65b0\u6574\u7406\u83dc\u55ae\uff0c\u8acb\u91cd\u65b0\u52a0\u5165\u3002");
+        resetCartState();
+        await refreshMenu().catch((refreshError) => {
+          console.error(refreshError);
+        });
+        return;
+      }
+
       setNotice(
         error instanceof Error
           ? error.message
@@ -655,6 +691,19 @@ export default function App() {
       ]);
       setNotice("訂單已送出。");
     } catch (error) {
+      if (isHttpStatus(error, 409)) {
+        setNotice("\u8cfc\u7269\u8eca\u5167\u6709\u50f9\u683c\u6216\u7248\u672c\u5df2\u8b8a\u66f4\u7684\u54c1\u9805\uff0c\u8acb\u6e05\u7a7a\u5f8c\u91cd\u65b0\u52a0\u5165\u518d\u9001\u51fa\u3002");
+        await Promise.all([
+          refreshMenu().catch((refreshError) => {
+            console.error(refreshError);
+          }),
+          loadCurrentOrder().catch((refreshError) => {
+            console.error(refreshError);
+          }),
+        ]);
+        return;
+      }
+
       setNotice(error instanceof Error ? error.message : "送出訂單失敗");
     } finally {
       setIsSubmittingOrder(false);
@@ -1585,6 +1634,21 @@ function MenuSection({
                 </figure>
                 <div className="card-body">
                   <h3 className="card-title text-lg">{item.name}</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {item.version ? (
+                      <span className="badge badge-outline">v{item.version}</span>
+                    ) : null}
+                    {item.isRecentlyUpdated ? (
+                      <span className="badge badge-info">
+                        {"\u6700\u8fd1\u66f4\u65b0"}
+                      </span>
+                    ) : null}
+                    {item.priceChanged && item.previousPrice ? (
+                      <span className="badge badge-warning">
+                        {"\u539f\u50f9"} ${item.previousPrice}
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="min-h-11 text-sm opacity-75">{item.description}</p>
                   <div className="card-actions items-center justify-between">
                     <span className="text-xl font-black text-success">

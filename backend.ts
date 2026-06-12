@@ -10,9 +10,11 @@ import {
   createMenuItemBodySchema,
   createRoleRequestBodySchema,
   deleteMenuItemParamsSchema,
+  getMenuHistoryParamsSchema,
   getOrderByIdParamsSchema,
   healthResponseSchema,
   listRoleRequestsQuerySchema,
+  menuHistoryResponseSchema,
   menuItemResponseSchema,
   menuListResponseSchema,
   nullableOrderResponseEnvelopeSchema,
@@ -245,7 +247,9 @@ app.patch(
     requireAnyRole(user, ["owner", "admin"]);
 
     const menuId = parseInt(params.id);
-    const menuItem = await store.updateMenuItem(menuId, body);
+    const menuItem = await store.updateMenuItem(menuId, body, {
+      userId: user.id,
+    });
 
     if (!menuItem) {
       set.status = 404;
@@ -264,6 +268,39 @@ app.patch(
     },
     response: {
       200: menuItemResponseSchema,
+      401: apiErrorResponseSchema,
+      403: apiErrorResponseSchema,
+      404: apiErrorResponseSchema,
+    },
+  },
+);
+
+app.get(
+  "/api/menu/:id/history",
+  async ({ params, request, set }) => {
+    const user = await requireUser(request);
+    requireAnyRole(user, ["staff", "chef", "owner", "admin"]);
+
+    const menuId = parseInt(params.id, 10);
+    const history = await store.getMenuVersionHistory?.(menuId);
+
+    if (!history || history.length === 0) {
+      set.status = 404;
+      return { error: "Menu item not found" };
+    }
+
+    return { data: history };
+  },
+  {
+    params: getMenuHistoryParamsSchema,
+    detail: {
+      tags: ["menu"],
+      summary: "List menu item version history",
+      description:
+        "Return historical versions for a menu item. Available to staff, chef, owner, and admin users.",
+    },
+    response: {
+      200: menuHistoryResponseSchema,
       401: apiErrorResponseSchema,
       403: apiErrorResponseSchema,
       404: apiErrorResponseSchema,
@@ -555,6 +592,13 @@ app.post(
     if (!result.ok && result.code === "EMPTY_ORDER") {
       set.status = 400;
       return { error: "Empty order cannot be submitted" };
+    }
+
+    if (!result.ok && result.code === "MENU_VERSION_OUTDATED") {
+      set.status = 409;
+      return {
+        error: "Cart contains outdated menu items. Please refresh your cart.",
+      };
     }
 
     if (!result.ok) {

@@ -6,11 +6,29 @@ import { z } from "zod";
 
 export const menuItemSchema = z.object({
   id: z.number().int().min(1),
+  logicalId: z.string().min(1).optional(),
+  version: z.number().int().min(1).optional(),
   name: z.string().min(1),
   price: z.number().min(0),
   category: z.string().min(1),
   description: z.string(),
   image_url: z.string().min(1),
+  isCurrentVersion: z.boolean().optional(),
+  isRecentlyUpdated: z.boolean().optional(),
+  priceChanged: z.boolean().optional(),
+  previousPrice: z.number().min(0).optional(),
+  supersedes: z.number().int().min(1).optional(),
+  changeReason: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export const menuItemVersionHistorySchema = menuItemSchema.extend({
+  logicalId: z.string().min(1),
+  version: z.number().int().min(1),
+  isCurrentVersion: z.boolean(),
+  changeReason: z.string(),
+  createdAt: z.string(),
 });
 
 export const roleSchema = z.enum(["customer", "staff", "chef", "owner", "admin"]);
@@ -72,6 +90,9 @@ export const orderSchema = z.object({
 
 // ─── Derived TypeScript Types（自動推導，永不過時）───────────────────────────
 export type MenuItem = z.infer<typeof menuItemSchema>;
+export type MenuItemVersionHistory = z.infer<
+  typeof menuItemVersionHistorySchema
+>;
 export type Role = z.infer<typeof roleSchema>;
 export type User = z.infer<typeof userSchema>;
 export type SessionUser = z.infer<typeof sessionUserSchema>;

@@ -1,4 +1,5 @@
 import {
+  boolean,
   integer,
   pgSchema,
   text,
@@ -29,11 +30,23 @@ const appSchema = pgSchema(schemaName);
 
 export const menuItemsTable = appSchema.table("menu_items", {
   id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  logicalId: text("logical_id"),
+  version: integer("version").notNull().default(1),
   name: text("name").notNull(),
   price: integer("price").notNull(),
   category: text("category").notNull(),
   description: text("description").notNull(),
   imageUrl: text("image_url").notNull(),
+  isCurrentVersion: boolean("is_current_version").notNull().default(true),
+  supersedes: integer("supersedes"),
+  changeReason: text("change_reason").notNull().default("Initial creation"),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 export const ordersTable = appSchema.table("orders", {
