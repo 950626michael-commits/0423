@@ -286,6 +286,7 @@ export default function App() {
   const canViewOperations = hasAnyRole(["staff", "chef", "owner", "admin"]);
   const canReviewRoles = hasRole("admin");
   const canDeleteOrders = hasAnyRole(["owner", "admin"]);
+  const canManageMenu = hasAnyRole(["owner", "admin"]);
 
   const filteredItems = useMemo(() => {
     const keyword = searchQuery.trim().toLowerCase();
@@ -808,6 +809,41 @@ export default function App() {
     }
   }
 
+  async function createMenuItem(input: {
+    name: string;
+    price: number;
+    category: string;
+    description: string;
+    image_url: string;
+  }) {
+    await readApi<ApiDataResponse<MenuItem>>("/api/menu", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    await refreshMenu();
+    setNotice("\u83dc\u55ae\u54c1\u9805\u5df2\u65b0\u589e\u3002");
+  }
+
+  async function updateMenuItemPrice(
+    menuItemId: number,
+    price: number,
+    changeReason: string,
+  ) {
+    await readApi<ApiDataResponse<MenuItem>>(`/api/menu/${menuItemId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ price, changeReason }),
+    });
+    await refreshMenu();
+    setNotice("\u50f9\u683c\u5df2\u66f4\u65b0\uff0c\u820a\u50f9\u683c\u5df2\u4fdd\u7559\u5728\u7248\u672c\u7d00\u9304\u3002");
+  }
+
+  async function loadMenuItemHistory(menuItemId: number) {
+    const payload = await readApi<ApiDataResponse<MenuItem[]>>(
+      `/api/menu/${menuItemId}/history`,
+    );
+    return payload.data;
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-base-200">
@@ -922,6 +958,8 @@ export default function App() {
             currentUserId={user.id}
             canDeleteOrders={canDeleteOrders}
             canReviewRoles={canReviewRoles}
+            canManageMenu={canManageMenu}
+            menuItems={items}
             operationOrders={operationOrders}
             operationsLoading={operationsLoading}
             deletingOrderId={deletingOrderId}
@@ -939,6 +977,9 @@ export default function App() {
             onReloadUsers={loadAdminUsers}
             onReviewRoleRequest={reviewRoleRequest}
             onUpdateUserRoles={updateUserRoles}
+            onCreateMenuItem={createMenuItem}
+            onUpdateMenuItemPrice={updateMenuItemPrice}
+            onLoadMenuItemHistory={loadMenuItemHistory}
           />
         ) : null}
 
@@ -1246,6 +1287,8 @@ function AdminPanel({
   currentUserId,
   canDeleteOrders,
   canReviewRoles,
+  canManageMenu,
+  menuItems,
   operationOrders,
   operationsLoading,
   deletingOrderId,
@@ -1263,11 +1306,16 @@ function AdminPanel({
   onReloadUsers,
   onReviewRoleRequest,
   onUpdateUserRoles,
+  onCreateMenuItem,
+  onUpdateMenuItemPrice,
+  onLoadMenuItemHistory,
 }: {
   labels: (typeof translations)[Language];
   currentUserId: string;
   canDeleteOrders: boolean;
   canReviewRoles: boolean;
+  canManageMenu: boolean;
+  menuItems: MenuItem[];
   operationOrders: Order[];
   operationsLoading: boolean;
   deletingOrderId: number | null;
@@ -1288,6 +1336,19 @@ function AdminPanel({
     status: "approved" | "rejected",
   ) => Promise<void>;
   onUpdateUserRoles: (userId: string, roles: Role[]) => Promise<void>;
+  onCreateMenuItem: (input: {
+    name: string;
+    price: number;
+    category: string;
+    description: string;
+    image_url: string;
+  }) => Promise<void>;
+  onUpdateMenuItemPrice: (
+    menuItemId: number,
+    price: number,
+    changeReason: string,
+  ) => Promise<void>;
+  onLoadMenuItemHistory: (menuItemId: number) => Promise<MenuItem[]>;
 }) {
   return (
     <section className="grid gap-4 rounded-lg border border-primary/30 bg-base-100 p-5 shadow-sm">
@@ -1304,6 +1365,14 @@ function AdminPanel({
           {operationsLoading ? "刷新中..." : "刷新訂單"}
         </button>
       </div>
+
+      <MenuManagement
+        items={menuItems}
+        canManageMenu={canManageMenu}
+        onCreateMenuItem={onCreateMenuItem}
+        onUpdateMenuItemPrice={onUpdateMenuItemPrice}
+        onLoadMenuItemHistory={onLoadMenuItemHistory}
+      />
 
       <div className="overflow-x-auto rounded-lg border border-base-300">
         <table className="table table-sm">
@@ -1361,6 +1430,333 @@ function AdminPanel({
         </>
       ) : null}
     </section>
+  );
+}
+
+function MenuManagement({
+  items,
+  canManageMenu,
+  onCreateMenuItem,
+  onUpdateMenuItemPrice,
+  onLoadMenuItemHistory,
+}: {
+  items: MenuItem[];
+  canManageMenu: boolean;
+  onCreateMenuItem: (input: {
+    name: string;
+    price: number;
+    category: string;
+    description: string;
+    image_url: string;
+  }) => Promise<void>;
+  onUpdateMenuItemPrice: (
+    menuItemId: number,
+    price: number,
+    changeReason: string,
+  ) => Promise<void>;
+  onLoadMenuItemHistory: (menuItemId: number) => Promise<MenuItem[]>;
+}) {
+  const [newItem, setNewItem] = useState({
+    name: "",
+    price: "",
+    category: "",
+    description: "",
+    image_url: "/imgs/menu/hot-latte.webp",
+  });
+  const [priceDrafts, setPriceDrafts] = useState<Record<number, string>>({});
+  const [reasonDrafts, setReasonDrafts] = useState<Record<number, string>>({});
+  const [historyByItemId, setHistoryByItemId] = useState<
+    Record<number, MenuItem[]>
+  >({});
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+
+  async function submitCreate() {
+    const price = Number(newItem.price);
+    if (
+      !newItem.name.trim() ||
+      !newItem.category.trim() ||
+      !newItem.description.trim() ||
+      !newItem.image_url.trim() ||
+      !Number.isFinite(price) ||
+      price < 0
+    ) {
+      setMessage("\u8acb\u586b\u5b8c\u83dc\u55ae\u540d\u7a31\u3001\u50f9\u683c\u3001\u5206\u985e\u3001\u63cf\u8ff0\u8207\u5716\u7247\u8def\u5f91\u3002");
+      return;
+    }
+
+    setBusyKey("create");
+    setMessage("");
+    try {
+      await onCreateMenuItem({
+        name: newItem.name.trim(),
+        price,
+        category: newItem.category.trim(),
+        description: newItem.description.trim(),
+        image_url: newItem.image_url.trim(),
+      });
+      setNewItem({
+        name: "",
+        price: "",
+        category: "",
+        description: "",
+        image_url: "/imgs/menu/hot-latte.webp",
+      });
+      setMessage("\u5df2\u65b0\u589e\u83dc\u55ae\u54c1\u9805\u3002");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "\u65b0\u589e\u83dc\u55ae\u5931\u6557");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function submitPriceUpdate(item: MenuItem) {
+    const price = Number(priceDrafts[item.id] ?? item.price);
+    const changeReason = (reasonDrafts[item.id] ?? "").trim();
+
+    if (!Number.isFinite(price) || price < 0) {
+      setMessage("\u8acb\u8f38\u5165\u6b63\u78ba\u50f9\u683c\u3002");
+      return;
+    }
+
+    if (changeReason.length < 3) {
+      setMessage("\u8acb\u586b\u5beb\u8abf\u6574\u50f9\u683c\u7684\u539f\u56e0\u3002");
+      return;
+    }
+
+    setBusyKey(`price:${item.id}`);
+    setMessage("");
+    try {
+      await onUpdateMenuItemPrice(item.id, price, changeReason);
+      setPriceDrafts((current) => ({ ...current, [item.id]: "" }));
+      setReasonDrafts((current) => ({ ...current, [item.id]: "" }));
+      setHistoryByItemId((current) => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
+      setMessage("\u50f9\u683c\u5df2\u66f4\u65b0\uff0c\u4e26\u5df2\u8a18\u9304\u820a\u50f9\u683c\u8207\u8b8a\u66f4\u539f\u56e0\u3002");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "\u66f4\u65b0\u50f9\u683c\u5931\u6557");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function toggleHistory(itemId: number) {
+    if (historyByItemId[itemId]) {
+      setHistoryByItemId((current) => {
+        const next = { ...current };
+        delete next[itemId];
+        return next;
+      });
+      return;
+    }
+
+    setBusyKey(`history:${itemId}`);
+    setMessage("");
+    try {
+      const history = await onLoadMenuItemHistory(itemId);
+      setHistoryByItemId((current) => ({ ...current, [itemId]: history }));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "\u8f09\u5165\u7248\u672c\u7d00\u9304\u5931\u6557");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  return (
+    <div className="grid gap-4 rounded-lg border border-base-300 p-4">
+      <div>
+        <h3 className="font-bold">{"\u83dc\u55ae\u7ba1\u7406"}</h3>
+        <p className="text-sm opacity-70">
+          {"\u65b0\u589e\u83dc\u55ae\u8207\u8abf\u6574\u50f9\u683c\u6703\u4fdd\u7559\u7248\u672c\u7d00\u9304\uff0c\u53ef\u8ffd\u8e64\u539f\u50f9\u8207\u8b8a\u66f4\u539f\u56e0\u3002"}
+        </p>
+        {message ? <p className="mt-2 text-sm text-primary">{message}</p> : null}
+      </div>
+
+      {canManageMenu ? (
+        <div className="grid gap-3 rounded-lg bg-base-200 p-3 md:grid-cols-5">
+          <input
+            className="input input-bordered input-sm"
+            value={newItem.name}
+            placeholder={"\u54c1\u9805\u540d\u7a31"}
+            onChange={(event) =>
+              setNewItem((current) => ({ ...current, name: event.target.value }))
+            }
+          />
+          <input
+            className="input input-bordered input-sm"
+            value={newItem.price}
+            type="number"
+            min="0"
+            placeholder={"\u50f9\u683c"}
+            onChange={(event) =>
+              setNewItem((current) => ({ ...current, price: event.target.value }))
+            }
+          />
+          <input
+            className="input input-bordered input-sm"
+            value={newItem.category}
+            placeholder={"\u5206\u985e"}
+            onChange={(event) =>
+              setNewItem((current) => ({
+                ...current,
+                category: event.target.value,
+              }))
+            }
+          />
+          <input
+            className="input input-bordered input-sm"
+            value={newItem.image_url}
+            placeholder={"\u5716\u7247\u8def\u5f91"}
+            onChange={(event) =>
+              setNewItem((current) => ({
+                ...current,
+                image_url: event.target.value,
+              }))
+            }
+          />
+          <button
+            className="btn btn-sm btn-primary"
+            disabled={busyKey === "create"}
+            onClick={() => void submitCreate()}
+          >
+            {busyKey === "create"
+              ? "\u65b0\u589e\u4e2d..."
+              : "\u65b0\u589e\u83dc\u55ae"}
+          </button>
+          <textarea
+            className="textarea textarea-bordered textarea-sm md:col-span-5"
+            value={newItem.description}
+            placeholder={"\u54c1\u9805\u63cf\u8ff0"}
+            onChange={(event) =>
+              setNewItem((current) => ({
+                ...current,
+                description: event.target.value,
+              }))
+            }
+          />
+        </div>
+      ) : null}
+
+      <div className="overflow-x-auto rounded-lg border border-base-300">
+        <table className="table table-sm">
+          <thead>
+            <tr>
+              <th>{"\u54c1\u9805"}</th>
+              <th>{"\u76ee\u524d\u50f9\u683c"}</th>
+              <th>{"\u7248\u672c"}</th>
+              <th>{"\u65b0\u50f9\u683c"}</th>
+              <th>{"\u8b8a\u66f4\u539f\u56e0"}</th>
+              <th>{"\u64cd\u4f5c"}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => {
+              const history = historyByItemId[item.id];
+
+              return (
+                <tr key={item.id}>
+                  <td className="min-w-44">
+                    <div className="font-semibold">{item.name}</div>
+                    <div className="text-xs opacity-60">{item.category}</div>
+                  </td>
+                  <td>${item.price}</td>
+                  <td>v{item.version ?? 1}</td>
+                  <td>
+                    <input
+                      className="input input-bordered input-xs w-24"
+                      type="number"
+                      min="0"
+                      value={priceDrafts[item.id] ?? ""}
+                      placeholder={String(item.price)}
+                      disabled={!canManageMenu}
+                      onChange={(event) =>
+                        setPriceDrafts((current) => ({
+                          ...current,
+                          [item.id]: event.target.value,
+                        }))
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="input input-bordered input-xs min-w-48"
+                      value={reasonDrafts[item.id] ?? ""}
+                      placeholder={"\u4f8b\uff1a\u539f\u7269\u6599\u6210\u672c\u8abf\u6574"}
+                      disabled={!canManageMenu}
+                      onChange={(event) =>
+                        setReasonDrafts((current) => ({
+                          ...current,
+                          [item.id]: event.target.value,
+                        }))
+                      }
+                    />
+                  </td>
+                  <td>
+                    <div className="flex flex-wrap gap-2">
+                      {canManageMenu ? (
+                        <button
+                          className="btn btn-xs btn-primary"
+                          disabled={busyKey === `price:${item.id}`}
+                          onClick={() => void submitPriceUpdate(item)}
+                        >
+                          {busyKey === `price:${item.id}`
+                            ? "\u66f4\u65b0\u4e2d..."
+                            : "\u66f4\u65b0\u50f9\u683c"}
+                        </button>
+                      ) : null}
+                      <button
+                        className="btn btn-xs btn-outline"
+                        disabled={busyKey === `history:${item.id}`}
+                        onClick={() => void toggleHistory(item.id)}
+                      >
+                        {history
+                          ? "\u6536\u8d77\u7d00\u9304"
+                          : "\u50f9\u683c\u7d00\u9304"}
+                      </button>
+                    </div>
+
+                    {history ? (
+                      <div className="mt-3 overflow-x-auto rounded border border-base-300">
+                        <table className="table table-xs">
+                          <thead>
+                            <tr>
+                              <th>{"\u7248\u672c"}</th>
+                              <th>{"\u50f9\u683c"}</th>
+                              <th>{"\u539f\u56e0"}</th>
+                              <th>{"\u6642\u9593"}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {history.map((version) => (
+                              <tr key={version.id}>
+                                <td>
+                                  v{version.version ?? 1}
+                                  {version.isCurrentVersion
+                                    ? " \u76ee\u524d"
+                                    : ""}
+                                </td>
+                                <td>${version.price}</td>
+                                <td className="max-w-56 truncate">
+                                  {version.changeReason ?? "-"}
+                                </td>
+                                <td>{formatDate(version.createdAt)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
