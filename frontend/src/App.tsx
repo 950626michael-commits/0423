@@ -2042,21 +2042,6 @@ function MenuSection({
                 </figure>
                 <div className="card-body">
                   <h3 className="card-title text-lg">{item.name}</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {item.version ? (
-                      <span className="badge badge-outline">v{item.version}</span>
-                    ) : null}
-                    {item.isRecentlyUpdated ? (
-                      <span className="badge badge-info">
-                        {"\u6700\u8fd1\u66f4\u65b0"}
-                      </span>
-                    ) : null}
-                    {item.priceChanged && item.previousPrice ? (
-                      <span className="badge badge-warning">
-                        {"\u539f\u50f9"} ${item.previousPrice}
-                      </span>
-                    ) : null}
-                  </div>
                   <p className="min-h-11 text-sm opacity-75">{item.description}</p>
                   <div className="card-actions items-center justify-between">
                     <span className="text-xl font-black text-success">
