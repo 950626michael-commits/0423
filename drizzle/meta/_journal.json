@@ -71,6 +71,13 @@
       "when": 1781022000000,
       "tag": "0009_menu_versioning",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781023000000,
+      "tag": "0010_repair_menu_current_versions",
+      "breakpoints": true
     }
   ]
 }

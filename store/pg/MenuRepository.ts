@@ -1,9 +1,19 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../db/client.ts";
 import { menuItemsTable } from "../../db/schema.ts";
 import type { MenuItem, MenuItemVersionHistory } from "../../shared/contracts.ts";
 
 type MenuRow = typeof menuItemsTable.$inferSelect;
+
+async function getNextMenuItemId(): Promise<number> {
+  const [row] = await db
+    .select({
+      nextId: sql<number>`coalesce(max((${menuItemsTable.id})::integer), 0) + 1`,
+    })
+    .from(menuItemsTable);
+
+  return Number(row?.nextId ?? 1);
+}
 
 function toIso(value: Date | string | null | undefined): string | undefined {
   if (!value) return undefined;
@@ -82,9 +92,12 @@ export class MenuRepository {
     image_url: string;
     userId?: string;
   }): Promise<MenuItem> {
+    const id = await getNextMenuItemId();
     const [inserted] = await db
       .insert(menuItemsTable)
       .values({
+        id,
+        logicalId: String(id),
         name: input.name,
         price: input.price,
         category: input.category,
@@ -101,12 +114,7 @@ export class MenuRepository {
 
     if (!inserted) throw new Error("Failed to create menu item");
 
-    await db
-      .update(menuItemsTable)
-      .set({ logicalId: String(inserted.id) })
-      .where(eq(menuItemsTable.id, inserted.id));
-
-    return toMenuItem({ ...inserted, logicalId: String(inserted.id) });
+    return toMenuItem(inserted);
   }
 
   async updateMenuItem(
@@ -130,7 +138,7 @@ export class MenuRepository {
     if (!target) return null;
 
     const logicalId = target.logicalId ?? String(target.id);
-    const [current] = await db
+    let [current] = await db
       .select()
       .from(menuItemsTable)
       .where(
@@ -141,16 +149,22 @@ export class MenuRepository {
       )
       .limit(1);
 
+    if (!current) {
+      [current] = await db
+        .select()
+        .from(menuItemsTable)
+        .where(eq(menuItemsTable.logicalId, logicalId))
+        .orderBy(desc(menuItemsTable.version), desc(menuItemsTable.id))
+        .limit(1);
+    }
+
     if (!current) return null;
 
-    await db
-      .update(menuItemsTable)
-      .set({ isCurrentVersion: false, updatedAt: new Date() })
-      .where(eq(menuItemsTable.id, current.id));
-
+    const nextId = await getNextMenuItemId();
     const [inserted] = await db
       .insert(menuItemsTable)
       .values({
+        id: nextId,
         logicalId,
         version: current.version + 1,
         name: patch.name ?? current.name,
@@ -167,7 +181,19 @@ export class MenuRepository {
       })
       .returning();
 
-    return inserted ? toMenuItem(inserted, current.price) : null;
+    if (!inserted) return null;
+
+    await db
+      .update(menuItemsTable)
+      .set({ isCurrentVersion: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(menuItemsTable.logicalId, logicalId),
+          sql`${menuItemsTable.id} <> ${inserted.id}`,
+        ),
+      );
+
+    return toMenuItem(inserted, current.price);
   }
 
   async hideCurrentMenuItem(menuId: number): Promise<MenuItem | null> {
