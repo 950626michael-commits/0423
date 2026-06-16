@@ -121,46 +121,53 @@ export class MenuRepository {
     },
     userId?: string,
   ): Promise<MenuItem | null> {
-    return await db.transaction(async (tx) => {
-      const [current] = await tx
-        .select()
-        .from(menuItemsTable)
-        .where(
-          and(
-            eq(menuItemsTable.id, menuId),
-            eq(menuItemsTable.isCurrentVersion, true),
-          ),
-        )
-        .limit(1);
+    const [target] = await db
+      .select()
+      .from(menuItemsTable)
+      .where(eq(menuItemsTable.id, menuId))
+      .limit(1);
 
-      if (!current) return null;
+    if (!target) return null;
 
-      await tx
-        .update(menuItemsTable)
-        .set({ isCurrentVersion: false, updatedAt: new Date() })
-        .where(eq(menuItemsTable.id, current.id));
+    const logicalId = target.logicalId ?? String(target.id);
+    const [current] = await db
+      .select()
+      .from(menuItemsTable)
+      .where(
+        and(
+          eq(menuItemsTable.logicalId, logicalId),
+          eq(menuItemsTable.isCurrentVersion, true),
+        ),
+      )
+      .limit(1);
 
-      const [inserted] = await tx
-        .insert(menuItemsTable)
-        .values({
-          logicalId: current.logicalId ?? String(current.id),
-          version: current.version + 1,
-          name: patch.name ?? current.name,
-          price: patch.price ?? current.price,
-          category: patch.category ?? current.category,
-          description: patch.description ?? current.description,
-          imageUrl: patch.image_url ?? current.imageUrl,
-          isCurrentVersion: true,
-          supersedes: current.id,
-          changeReason: patch.changeReason ?? "Menu item updated",
-          createdBy: userId,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .returning();
+    if (!current) return null;
 
-      return inserted ? toMenuItem(inserted, current.price) : null;
-    });
+    await db
+      .update(menuItemsTable)
+      .set({ isCurrentVersion: false, updatedAt: new Date() })
+      .where(eq(menuItemsTable.id, current.id));
+
+    const [inserted] = await db
+      .insert(menuItemsTable)
+      .values({
+        logicalId,
+        version: current.version + 1,
+        name: patch.name ?? current.name,
+        price: patch.price ?? current.price,
+        category: patch.category ?? current.category,
+        description: patch.description ?? current.description,
+        imageUrl: patch.image_url ?? current.imageUrl,
+        isCurrentVersion: true,
+        supersedes: current.id,
+        changeReason: patch.changeReason ?? "Menu item updated",
+        createdBy: userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+
+    return inserted ? toMenuItem(inserted, current.price) : null;
   }
 
   async hideCurrentMenuItem(menuId: number): Promise<MenuItem | null> {

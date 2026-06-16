@@ -829,9 +829,21 @@ export default function App() {
     price: number,
     changeReason: string,
   ) {
-    await readApi<ApiDataResponse<MenuItem>>(`/api/menu/${menuItemId}`, {
+    const payload = await readApi<ApiDataResponse<MenuItem>>(`/api/menu/${menuItemId}`, {
       method: "PATCH",
       body: JSON.stringify({ price, changeReason }),
+    });
+    setItems((current) => {
+      const nextItem = payload.data;
+      return [
+        nextItem,
+        ...current.filter(
+          (item) =>
+            item.id !== menuItemId &&
+            item.id !== nextItem.id &&
+            item.logicalId !== nextItem.logicalId,
+        ),
+      ].sort((a, b) => a.id - b.id);
     });
     await refreshMenu();
     setNotice("\u50f9\u683c\u5df2\u66f4\u65b0\uff0c\u820a\u50f9\u683c\u5df2\u4fdd\u7559\u5728\u7248\u672c\u7d00\u9304\u3002");
