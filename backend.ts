@@ -597,7 +597,8 @@ app.post(
     if (!result.ok && result.code === "MENU_VERSION_OUTDATED") {
       set.status = 409;
       return {
-        error: "Cart contains outdated menu items. Please refresh your cart.",
+        error:
+          "Cart expired because a menu item price changed. Please add the items again.",
       };
     }
 

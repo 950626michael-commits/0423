@@ -315,6 +315,7 @@ export class PgStore implements Store {
         order.items.map((item) => item.item.id),
       );
     if (!versionValidation.valid) {
+      await this.deleteOrder(orderId);
       return { ok: false, code: "MENU_VERSION_OUTDATED" };
     }
 

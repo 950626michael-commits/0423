@@ -252,6 +252,9 @@ export default function App() {
   const [cartQtyByItemId, setCartQtyByItemId] = useState<Record<number, number>>(
     {},
   );
+  const [cartItemsById, setCartItemsById] = useState<Record<number, MenuItem>>(
+    {},
+  );
   const [cartTotal, setCartTotal] = useState(0);
   const [historyOrders, setHistoryOrders] = useState<Order[]>([]);
   const [operationOrders, setOperationOrders] = useState<Order[]>([]);
@@ -315,24 +318,23 @@ export default function App() {
     );
   }, [filteredItems]);
 
-  const cartItemCount = useMemo(
-    () => Object.values(cartQtyByItemId).reduce((sum, qty) => sum + qty, 0),
-    [cartQtyByItemId],
-  );
-
   const cartDetails = useMemo(() => {
-    const itemById = new Map(items.map((item) => [item.id, item]));
-
     return Object.entries(cartQtyByItemId)
       .map(([itemIdText, qty]) => {
-        const item = itemById.get(Number(itemIdText));
+        const item = cartItemsById[Number(itemIdText)];
         if (!item || qty <= 0) return null;
         return { item, qty, subtotal: item.price * qty };
       })
       .filter((entry): entry is { item: MenuItem; qty: number; subtotal: number } =>
         Boolean(entry),
       );
-  }, [cartQtyByItemId, items]);
+  }, [cartItemsById, cartQtyByItemId]);
+
+  const cartItemCount = useMemo(
+    () => cartDetails.reduce((sum, detail) => sum + detail.qty, 0),
+    [cartDetails],
+  );
+  const displayedCartTotal = cartDetails.length === 0 ? 0 : cartTotal;
 
   const comboFoodOptions = useMemo(() => {
     const preferred = items.filter(isMainComboItem);
@@ -427,15 +429,24 @@ export default function App() {
       },
       {} as Record<number, number>,
     );
+    const nextItemsById = order.items.reduce(
+      (acc, orderItem) => {
+        acc[orderItem.item.id] = orderItem.item;
+        return acc;
+      },
+      {} as Record<number, MenuItem>,
+    );
 
     setOrderId(order.id);
     setCartQtyByItemId(nextQtyByItemId);
+    setCartItemsById(nextItemsById);
     setCartTotal(order.total);
   }
 
   function resetCartState() {
     setOrderId(null);
     setCartQtyByItemId({});
+    setCartItemsById({});
     setCartTotal(0);
     setIsCartOpen(false);
   }
@@ -693,19 +704,17 @@ export default function App() {
       setNotice("訂單已送出。");
     } catch (error) {
       if (isHttpStatus(error, 409)) {
-        setNotice("\u8cfc\u7269\u8eca\u5167\u6709\u50f9\u683c\u6216\u7248\u672c\u5df2\u8b8a\u66f4\u7684\u54c1\u9805\uff0c\u8acb\u6e05\u7a7a\u5f8c\u91cd\u65b0\u52a0\u5165\u518d\u9001\u51fa\u3002");
-        await Promise.all([
-          refreshMenu().catch((refreshError) => {
-            console.error(refreshError);
-          }),
-          loadCurrentOrder().catch((refreshError) => {
-            console.error(refreshError);
-          }),
-        ]);
+        resetCartState();
+        setNotice(
+          "\u8cfc\u7269\u8eca\u5df2\u5931\u6548\uff1a\u9910\u9ede\u50f9\u683c\u5df2\u8b8a\u66f4\uff0c\u8acb\u91cd\u65b0\u52a0\u5165\u5546\u54c1\u3002",
+        );
+        await refreshMenu().catch((refreshError) => {
+          console.error(refreshError);
+        });
         return;
       }
 
-      setNotice(error instanceof Error ? error.message : "送出訂單失敗");
+      setNotice(error instanceof Error ? error.message : "Failed to submit order");
     } finally {
       setIsSubmittingOrder(false);
     }
@@ -953,7 +962,7 @@ export default function App() {
             <CartSummary
               labels={t}
               cartItemCount={cartItemCount}
-              cartTotal={cartTotal}
+              cartTotal={displayedCartTotal}
               onOpenCart={() => setIsCartOpen(true)}
             />
           </section>
@@ -1030,7 +1039,7 @@ export default function App() {
       {user && isCartOpen ? (
         <CartDrawer
           details={cartDetails}
-          total={cartTotal}
+          total={displayedCartTotal}
           isSubmitting={isSubmittingOrder}
           onClose={() => setIsCartOpen(false)}
           onChangeQty={(itemId, qty) => void setCartItemQty(itemId, qty)}

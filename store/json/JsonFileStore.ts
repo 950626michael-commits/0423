@@ -404,7 +404,7 @@ export class JsonFileStore implements Store {
         existingOrderItem.qty = input.qty;
       }
     } else if (input.qty > 0) {
-      order.items.push({ item: menuItem, qty: input.qty });
+      order.items.push({ item: { ...menuItem }, qty: input.qty });
     }
 
     order.total = calculateOrderTotal(order.items);
@@ -443,6 +443,18 @@ export class JsonFileStore implements Store {
 
     if (order.items.length === 0) {
       return { ok: false, code: "EMPTY_ORDER" };
+    }
+
+    const menuIsCurrent = order.items.every((orderItem) => {
+      const currentItem = this.menu.find(
+        (menuItem) => menuItem.id === orderItem.item.id,
+      );
+      return currentItem?.price === orderItem.item.price;
+    });
+
+    if (!menuIsCurrent) {
+      await this.deleteOrder(orderId);
+      return { ok: false, code: "MENU_VERSION_OUTDATED" };
     }
 
     order.status = "submitted";
